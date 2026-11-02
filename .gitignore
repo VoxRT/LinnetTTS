@@ -6,3 +6,4 @@ target/
 *.linnet
 tests/goldens/*.bin
 .DS_Store
+local/
