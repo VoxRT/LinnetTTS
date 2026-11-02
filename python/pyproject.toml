@@ -1,0 +1,14 @@
+[project]
+name = "linnet-tts"
+version = "0.0.1"
+description = "LinnetTTS — lightweight on-device TTS (PyTorch inference)"
+license = {text = "Apache-2.0"}
+requires-python = ">=3.10"
+dependencies = ["torch>=2.1", "numpy", "sentencepiece", "safetensors", "soundfile"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["linnet_tts*"]
