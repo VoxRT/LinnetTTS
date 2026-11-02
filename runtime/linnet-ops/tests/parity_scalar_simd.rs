@@ -102,7 +102,14 @@ fn add_scaled_inplace_within_one_ulp() {
 }
 
 #[test]
-fn add_mul_inplace_within_one_ulp() {
+fn add_mul_inplace_within_fma_rounding() {
+    // The SIMD paths fuse `a + b·c` into one rounding; the scalar
+    // reference rounds the product first. The two differ by at most the
+    // rounding error of the product (≤ 2⁻²⁴·|b·c|) plus one rounding of
+    // the result. When `a` and `b·c` nearly cancel, that fixed absolute
+    // difference is many ULPs of the small result (4 ULP was observed at
+    // n = 8 on NEON), so the bound is absolute, in terms of the operand
+    // magnitudes, rather than in ULPs of the result.
     let mut seed = 3;
     for &n in SIZES {
         let a0 = rand_vec(n, &mut seed);
@@ -112,7 +119,15 @@ fn add_mul_inplace_within_one_ulp() {
         let mut r = a0.clone();
         add_mul_inplace(&mut a, &b, &c);
         add_mul_inplace_scalar(&mut r, &b, &c);
-        assert_within_ulps(&a, &r, 1, &format!("add_mul_inplace n={n}"));
+        for i in 0..n {
+            let bound = 2.0 * f32::EPSILON * (a0[i].abs() + (b[i] * c[i]).abs());
+            assert!(
+                (a[i] - r[i]).abs() <= bound,
+                "add_mul_inplace n={n}: i={i} {} vs {} (bound {bound:e})",
+                a[i],
+                r[i]
+            );
+        }
     }
 }
 
