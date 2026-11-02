@@ -31,6 +31,10 @@ Given the same weights, text, voice file, `temp`, `cfg`, `max_frames` and the sa
 step, drawn before the EOS check), Python and Rust must produce identical latents (fp32, tolerance 1e-4) and audio within 1e-4 abs.
 The Rust runtime reads the noise from a seeded generator; the goldens store the noise so both sides can be checked against each other.
 
+The Rust runtime's output does not depend on its thread count (`threads` in the parameters, 1 = single-threaded, 0 = automatic). Work
+is split only across output rows, attention heads, channels and STFT columns; every dot product, LayerNorm row, depthwise channel and
+iFFT column is computed by one thread in a fixed order, so the latents and the audio are bit-identical for any number of threads.
+
 ## Latency
 
 First audio is available after the prime pass plus one LM step and two decoder frames; there is no lookahead anywhere in the chain.

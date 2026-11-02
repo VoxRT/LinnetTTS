@@ -16,6 +16,16 @@ concatenate bit-for-bit to the offline result.
 Model weights (`linnet-en-35m.fp16.safetensors`, `tokenizer.model`) and voice files are not part of any
 channel; see `WEIGHTS_LICENSE.md`.
 
+## Threads
+
+Every channel exposes a `threads` setting: `1` runs single-threaded, `0` (the default) picks the fast cores of the
+device (at most 4; big cluster on Android/Linux by `cpuinfo_max_freq`, performance cores on Apple platforms). The
+model owns one persistent worker pool; the parameter of a session (`SynthParams.threads`, Python/Kotlin keyword
+`threads`) is applied to the model when the session is created, and the C API sets it on the model directly
+(`linnet_set_threads(model, n)`, `linnet_threads(model)`). Work is split across output rows, heads and columns
+with every reduction kept on one thread, so **the audio is bit-identical for every thread count**; only the
+speed changes (see `docs/streaming-contract.md`).
+
 ## Linux C
 
 ```sh
