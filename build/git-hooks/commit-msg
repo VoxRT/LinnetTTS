@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Reject commit messages carrying attribution trailers or tooling chatter.
+if grep -q -i -E "co-authored-by|claude|anthropic|session_|generated with|\bllm\b|subagent|\bagent\b" "$1"; then
+  echo "commit-msg: forbidden trailer or wording in the commit message" >&2
+  exit 1
+fi
+exit 0

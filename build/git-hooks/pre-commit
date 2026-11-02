@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Reject staged changes that carry tooling chatter or private paths.
+bad=$(git diff --cached -U0 | grep -E '^\+' | grep -v -E '^\+\+\+' | grep -i -E "claude|anthropic|co-authored|subagent|\bllm\b|/home/marat|ai_sdk|voxrt-sdk|pocket_tts|pocket-tts")
+if [ -n "$bad" ]; then
+  echo "pre-commit: forbidden content in staged changes:" >&2
+  echo "$bad" | head -20 >&2
+  exit 1
+fi
+exit 0
