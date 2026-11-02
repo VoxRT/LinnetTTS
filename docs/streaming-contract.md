@@ -1,6 +1,6 @@
 # Streaming contract
 
-Both implementations (Python `linnet_tts.synth.Linnet.stream()` and the Rust runtime session) follow the same contract, and the
+Both implementations (Python `linnet_tts_torch.synth.Linnet.stream()` and the Rust runtime session) follow the same contract, and the
 shared golden vectors in `tests/goldens/` pin it down.
 
 ## Grid

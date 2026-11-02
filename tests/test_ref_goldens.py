@@ -48,7 +48,7 @@ def manifest() -> dict:
 
 @pytest.fixture(scope="module")
 def model():
-    from linnet_tts.synth import Linnet
+    from linnet_tts_torch.synth import Linnet
 
     torch.set_num_threads(4)
     return Linnet.from_files(os.environ["LINNET_WEIGHTS"], os.environ["LINNET_TOKENIZER"])

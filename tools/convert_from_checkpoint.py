@@ -20,7 +20,7 @@ import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "python"))
 
-from linnet_tts import DecoderConfig, FlowLM, Linnet, LMConfig, VocosDecoder  # noqa: E402
+from linnet_tts_torch import DecoderConfig, FlowLM, Linnet, LMConfig, VocosDecoder  # noqa: E402
 
 # training-checkpoint key -> LinnetTTS key (top-level LM tensors)
 LM_TOP = {

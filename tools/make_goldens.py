@@ -26,7 +26,7 @@ import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "python"))
 
-from linnet_tts import OUTPUT_DELAY, Linnet  # noqa: E402
+from linnet_tts_torch import OUTPUT_DELAY, Linnet  # noqa: E402
 
 CASES = [
     ("hello", "Hello there.", 11),

@@ -29,7 +29,7 @@ import torch
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / "python"))
 
-from linnet_tts import DecoderConfig, FlowLM, Linnet, LMConfig, VocosDecoder  # noqa: E402
+from linnet_tts_torch import DecoderConfig, FlowLM, Linnet, LMConfig, VocosDecoder  # noqa: E402
 
 torch.set_num_threads(min(8, os.cpu_count() or 1))
 
