@@ -162,3 +162,12 @@ timings (release, 67-step sentence): threads 1 mean 3.3 ms per step (RTF 5 %), t
 per-step work is too small on an M5 for the pool to pay off). The simulator runs on the same host CPU and gives
 the same numbers in a Release test host; it does not predict a phone. Device runs: `device-smoke.sh` (needs an
 unlocked login keychain on the Mac for `codesign`).
+
+Device results (0.0.1, iPhone 13 Pro Max, A15, iOS 27, hosted `LinnetSampleTests`, release): all 6 tests pass; the audio
+MD5s equal the macOS host and simulator values for every thread count (same NEON kernels, thread-count independent
+result). Timings on the 67-step sentence (5.44 s of audio): threads 1 — prime 79 ms, first chunk 85 ms, mean step
+5.50 ms (worst 6.0), RTF 8.3 %; threads 0 (auto = 2 performance cores) — prime 46 ms, first chunk 51 ms, mean step
+4.57 ms (worst 7.2), RTF 6.6 %; threads 4 — mean step 17.2 ms (worst 97 ms), RTF 23 %: oversubscribing onto the
+efficiency cores hurts badly, which is why `auto` is capped at the performance-core count. Ten utterances back to back
+with `auto`: 333 steps, 26.6 s of audio in 3.9 s (RTF 14.6 %, includes ten primes and sustained-load scheduling).
+Recommended default on iOS: `threads = 0`.
