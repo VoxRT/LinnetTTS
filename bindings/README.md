@@ -29,6 +29,14 @@ model owns one persistent worker pool; the parameter of a session (`SynthParams.
 with every reduction kept on one thread, so **the audio is bit-identical for every thread count**; only the
 speed changes (see `docs/streaming-contract.md`).
 
+## Playback and step time
+
+Synthesis is far faster than real time, so the player helpers (`LinnetPlayer` on iOS, `AudioTrackPlayer` on Android)
+queue 8 s of audio ahead by default: an utterance is produced in one burst at full clock and playback drains behind
+it. Pacing synthesis to real time with a small queue makes every step 3-4 times slower (the core is clocked down and
+the work moved to efficiency cores while the thread sleeps between steps) without improving latency to the first
+chunk. Measure throughput without pacing; the sample apps' `-nopace`/`-noaudio` flags exist for that.
+
 ## Linux C
 
 ```sh

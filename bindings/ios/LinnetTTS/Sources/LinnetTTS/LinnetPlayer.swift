@@ -12,14 +12,17 @@ import Foundation
 /// while let chunk = try session.step() { try player.write(chunk) }
 /// player.drain()
 /// ```
-/// ``write(_:)`` blocks while more than `bufferMillis` of audio is queued, which paces synthesis
-/// to real time. The player is not thread-safe; use it from the thread that drives the session
-/// (``stop()`` may be called from any thread).
+/// ``write(_:)`` blocks while more than `bufferMillis` of audio is queued. The default keeps 8 s ahead,
+/// so a typical utterance is synthesised in one burst at full speed and playback drains behind it. Do not
+/// pace synthesis to real time with a small buffer: a thread that sleeps 70 ms of every 80 ms is clocked
+/// down and moved to efficiency cores by iOS, and each step then takes 3-4 times longer (measured 22 ms
+/// instead of 6.7 ms on an A13). The player is not thread-safe; use it from the thread that drives the
+/// session (``stop()`` may be called from any thread).
 ///
 /// - Parameters:
 ///   - sampleRate: output rate, ``LinnetModel/sampleRate``.
-///   - bufferMillis: audio kept queued ahead of playback; larger values survive slower steps,
-///     smaller ones react faster to ``stop()``.
+///   - bufferMillis: audio kept queued ahead of playback (default 8000). Smaller values only make
+///     ``stop()`` drop less audio; they do not reduce latency to the first chunk.
 public final class LinnetPlayer {
     private let engine = AVAudioEngine()
     private let node = AVAudioPlayerNode()
@@ -31,7 +34,7 @@ public final class LinnetPlayer {
     private var generation = 0
     private var started = false
 
-    public init(sampleRate: Int, bufferMillis: Int = 400) throws {
+    public init(sampleRate: Int, bufferMillis: Int = 8000) throws {
         guard let f = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: Double(sampleRate), channels: 1,
                                     interleaved: false)
         else { throw LinnetError.invalidArgument("unsupported sample rate \(sampleRate)") }

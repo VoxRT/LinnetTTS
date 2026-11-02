@@ -18,13 +18,18 @@ import android.media.AudioTrack
  *     }
  * }
  * ```
- * [write] blocks while the track buffer is full, which paces synthesis to real time.
- * The player is not thread-safe; use it from the thread that drives the session.
+ * [write] blocks while the track buffer is full. The default buffer holds 8 s, so a typical utterance is
+ * synthesised in one burst at full speed and playback drains behind it. Do not pace synthesis to real time
+ * with a small buffer: a thread that sleeps most of every 80 ms step is clocked down and moved to little
+ * cores by the kernel's frequency governor, and each step then takes several times longer (measured on
+ * iOS: 22 ms instead of 6.7 ms per step; the same mechanism applies to Android). The player is not
+ * thread-safe; use it from the thread that drives the session.
  *
  * @param sampleRate output rate, [LinnetModel.sampleRate].
- * @param bufferMillis size of the track buffer; larger values survive slower steps, smaller ones start sooner.
+ * @param bufferMillis size of the track buffer (default 8000 ms, 768 KB at 24 kHz float); smaller values only
+ *   make [stopNow] drop less audio, they do not reduce latency to the first chunk.
  */
-class AudioTrackPlayer(private val sampleRate: Int, bufferMillis: Int = 400) : AutoCloseable {
+class AudioTrackPlayer(private val sampleRate: Int, bufferMillis: Int = 8000) : AutoCloseable {
     private val track: AudioTrack
     private var started = false
     private var framesWritten = 0L
