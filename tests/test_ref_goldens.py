@@ -100,7 +100,7 @@ def test_voice_roundtrip(model, manifest):
 @pytest.mark.parametrize("case", sorted(json.loads((GOLD / "manifest.json").read_text(encoding="utf-8"))["cases"]))
 def test_lm_case(model, manifest, case):
     c = manifest["cases"][case]
-    p = manifest["params"]
+    p = c.get("params", manifest["params"])
     assert model.tokenizer.encode(c["text"]) == c["tokens"], f"{case}: tokens differ"
     voice = torch.from_numpy(_load_bin(manifest["voices"][c["voice"]]["latent"]))
     noise = _load_bin(c["noise_unit"])  # [steps, 48]
