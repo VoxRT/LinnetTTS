@@ -141,9 +141,12 @@ fn guarded<'l, T>(env: &mut JNIEnv<'l>, default: T, f: impl FnOnce(&mut JNIEnv<'
 // Conversions
 
 /// Validate and convert the Kotlin-side parameters.
-pub fn params_from(temp: f32, cfg: f32, max_frames: i32, eos_threshold: f32, seed: i64) -> Result<SynthParams, Error> {
+pub fn params_from(temp: f32, cfg: f32, max_frames: i32, eos_threshold: f32, seed: i64, threads: i32) -> Result<SynthParams, Error> {
     if max_frames <= 0 {
         return Err(Error::Invalid(format!("maxFrames {max_frames} must be >= 1")));
+    }
+    if threads < 0 {
+        return Err(Error::Invalid(format!("threads {threads} must be >= 0")));
     }
     Ok(SynthParams {
         temp,
@@ -151,6 +154,7 @@ pub fn params_from(temp: f32, cfg: f32, max_frames: i32, eos_threshold: f32, see
         max_frames: max_frames as usize,
         eos_threshold,
         seed: seed as u64,
+        threads: threads as usize,
     })
 }
 
@@ -319,6 +323,7 @@ pub unsafe extern "system" fn Java_com_voxrt_linnet_LinnetNative_synthesize<'l>(
     max_frames: jint,
     eos_threshold: jfloat,
     seed: jlong,
+    threads: jint,
 ) -> JFloatArray<'l> {
     guarded(&mut env, JFloatArray::default(), |env| {
         let (Some(m), Some(v)) = (handle_ref::<ModelHandle>(model), handle_ref::<VoiceHandle>(voice)) else {
@@ -328,7 +333,7 @@ pub unsafe extern "system" fn Java_com_voxrt_linnet_LinnetNative_synthesize<'l>(
         let Some(t) = jstring_to_rust(env, &text) else {
             return JFloatArray::default();
         };
-        let params = match params_from(temp, cfg, max_frames, eos_threshold, seed) {
+        let params = match params_from(temp, cfg, max_frames, eos_threshold, seed, threads) {
             Ok(p) => p,
             Err(e) => {
                 throw_error(env, &e);
@@ -449,13 +454,14 @@ pub unsafe extern "system" fn Java_com_voxrt_linnet_LinnetNative_sessionNew(
     max_frames: jint,
     eos_threshold: jfloat,
     seed: jlong,
+    threads: jint,
 ) -> jlong {
     guarded(&mut env, 0, |env| {
         let (Some(m), Some(v)) = (handle_ref::<ModelHandle>(model), handle_ref::<VoiceHandle>(voice)) else {
             throw_invalid(env, "model or voice is closed");
             return 0;
         };
-        let params = match params_from(temp, cfg, max_frames, eos_threshold, seed) {
+        let params = match params_from(temp, cfg, max_frames, eos_threshold, seed, threads) {
             Ok(p) => p,
             Err(e) => {
                 throw_error(env, &e);
@@ -563,9 +569,9 @@ mod tests {
 
     #[test]
     fn params_validate_max_frames() {
-        assert!(params_from(0.3, 2.0, 0, -1.0, 0).is_err());
-        assert!(params_from(0.3, 2.0, -5, -1.0, 0).is_err());
-        let p = params_from(0.5, 1.0, 12, 0.25, -1).unwrap();
+        assert!(params_from(0.3, 2.0, 0, -1.0, 0, 0).is_err());
+        assert!(params_from(0.3, 2.0, -5, -1.0, 0, 0).is_err());
+        let p = params_from(0.5, 1.0, 12, 0.25, -1, 0).unwrap();
         assert_eq!(p.max_frames, 12);
         assert_eq!(p.seed, u64::MAX); // Kotlin Long -1 wraps to the full u64 range
         assert_eq!(p.temp, 0.5);

@@ -65,7 +65,7 @@ class LinnetModel private constructor(handle: Long) : AutoCloseable {
     fun synthesize(text: String, voice: Voice, params: SynthParams = SynthParams()): FloatArray =
         LinnetNative.synthesize(
             nativeHandle, voice.nativeHandle, text,
-            params.temp, params.cfg, params.maxFrames, params.eosThreshold, params.seed,
+            params.temp, params.cfg, params.maxFrames, params.eosThreshold, params.seed, params.threads,
         )
 
     /** Streaming session bound to [voice]. Call [LinnetSession.prime] before stepping. */
@@ -74,7 +74,7 @@ class LinnetModel private constructor(handle: Long) : AutoCloseable {
         LinnetSession(
             LinnetNative.sessionNew(
                 nativeHandle, voice.nativeHandle,
-                params.temp, params.cfg, params.maxFrames, params.eosThreshold, params.seed,
+                params.temp, params.cfg, params.maxFrames, params.eosThreshold, params.seed, params.threads,
             ),
             samplesPerStep,
         )

@@ -158,6 +158,18 @@ class Model:
     def tokenize(self, text: str) -> list:
         return list(self._m.tokenize(text))
 
+    @property
+    def threads(self) -> int:
+        """Threads the model uses (1 = single-threaded)."""
+        return self._m.threads
+
+    def set_threads(self, threads: int) -> None:
+        """Use ``threads`` threads: 1 = single-threaded, 0 = automatic (fast cores, at most 4).
+
+        The audio is identical for every value; only the speed changes.
+        """
+        self._m.set_threads(int(threads))
+
     def load_voice(self, path: _PathLike) -> Voice:
         """Load a ``.npy`` voice file and check its width against the model."""
         return Voice(self._m.load_voice(os.fspath(path)))
@@ -171,10 +183,21 @@ class Model:
         max_frames: int = 300,
         eos_threshold: float = -1.0,
         seed: int = 0,
+        threads: int = 0,
     ) -> np.ndarray:
-        """Whole utterance as a float32 array at ``sample_rate``."""
+        """Whole utterance as a float32 array at ``sample_rate``.
+
+        ``threads``: 1 = single-threaded, 0 = automatic; the result does not depend on it.
+        """
         data = self._m.synthesize(
-            text, voice._v, temp=temp, cfg=cfg, max_frames=max_frames, eos_threshold=eos_threshold, seed=seed
+            text,
+            voice._v,
+            temp=temp,
+            cfg=cfg,
+            max_frames=max_frames,
+            eos_threshold=eos_threshold,
+            seed=seed,
+            threads=threads,
         )
         return _to_array(data)
 
@@ -186,10 +209,19 @@ class Model:
         max_frames: int = 300,
         eos_threshold: float = -1.0,
         seed: int = 0,
+        threads: int = 0,
     ) -> Session:
         """Streaming session for ``voice``; call ``prime(text)`` then iterate."""
         return Session(
-            self._m.session(voice._v, temp=temp, cfg=cfg, max_frames=max_frames, eos_threshold=eos_threshold, seed=seed)
+            self._m.session(
+                voice._v,
+                temp=temp,
+                cfg=cfg,
+                max_frames=max_frames,
+                eos_threshold=eos_threshold,
+                seed=seed,
+                threads=threads,
+            )
         )
 
     def decode(self, latents: np.ndarray) -> np.ndarray:

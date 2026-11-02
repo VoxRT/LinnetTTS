@@ -8,6 +8,8 @@ package com.voxrt.linnet
  * @property maxFrames upper bound on LM steps (80 ms each); 300 = 24 s.
  * @property eosThreshold stop when the end-of-speech logit exceeds this value.
  * @property seed seed of the noise generator; the same seed gives the same audio.
+ * @property threads threads the model uses while this session runs: 1 = single-threaded,
+ *   0 = automatic (the fast cores, at most 4). The audio is identical for every value.
  */
 data class SynthParams(
     val temp: Float = 0.3f,
@@ -15,9 +17,11 @@ data class SynthParams(
     val maxFrames: Int = 300,
     val eosThreshold: Float = -1.0f,
     val seed: Long = 0L,
+    val threads: Int = 0,
 ) {
     init {
         require(maxFrames >= 1) { "maxFrames must be >= 1" }
+        require(threads >= 0) { "threads must be >= 0" }
         require(temp >= 0f && temp.isFinite()) { "temp must be finite and >= 0" }
         require(cfg.isFinite()) { "cfg must be finite" }
     }

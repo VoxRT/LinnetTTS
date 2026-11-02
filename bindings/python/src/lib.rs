@@ -35,7 +35,7 @@ fn pcm_bytes<'py>(py: Python<'py>, pcm: &[f32]) -> Bound<'py, PyBytes> {
     .expect("byte buffer")
 }
 
-fn params_from(temp: f32, cfg: f32, max_frames: u32, eos_threshold: f32, seed: u64) -> PyResult<SynthParams> {
+fn params_from(temp: f32, cfg: f32, max_frames: u32, eos_threshold: f32, seed: u64, threads: u32) -> PyResult<SynthParams> {
     if max_frames == 0 {
         return Err(PyValueError::new_err("max_frames must be >= 1"));
     }
@@ -45,6 +45,7 @@ fn params_from(temp: f32, cfg: f32, max_frames: u32, eos_threshold: f32, seed: u
         max_frames: max_frames as usize,
         eos_threshold,
         seed,
+        threads: threads as usize,
     })
 }
 
@@ -92,6 +93,18 @@ impl PyModel {
         self.inner.tokenize(text)
     }
 
+    /// Threads the model uses (1 = single-threaded).
+    #[getter]
+    fn threads(&self) -> usize {
+        self.inner.threads()
+    }
+
+    /// Use `threads` threads from now on: 1 = single-threaded, 0 = automatic
+    /// (the fast cores, at most 4). The audio is identical for every value.
+    fn set_threads(&self, threads: u32) {
+        self.inner.set_threads(threads as usize)
+    }
+
     /// Load `[T, latent_dim]` float32 latents from a `.npy` file.
     fn load_voice(&self, py: Python<'_>, path: &str) -> PyResult<PyVoice> {
         let p = path.to_owned();
@@ -107,7 +120,8 @@ impl PyModel {
     }
 
     /// Whole utterance as little-endian float32 bytes.
-    #[pyo3(signature = (text, voice, temp=0.3, cfg=2.0, max_frames=300, eos_threshold=-1.0, seed=0))]
+    #[pyo3(signature = (text, voice, temp=0.3, cfg=2.0, max_frames=300, eos_threshold=-1.0, seed=0, threads=0))]
+    #[allow(clippy::too_many_arguments)]
     fn synthesize<'py>(
         &self,
         py: Python<'py>,
@@ -118,8 +132,9 @@ impl PyModel {
         max_frames: u32,
         eos_threshold: f32,
         seed: u64,
+        threads: u32,
     ) -> PyResult<Bound<'py, PyBytes>> {
-        let params = params_from(temp, cfg, max_frames, eos_threshold, seed)?;
+        let params = params_from(temp, cfg, max_frames, eos_threshold, seed, threads)?;
         let model = Arc::clone(&self.inner);
         let voice = Arc::clone(&voice.inner);
         let text = text.to_owned();
@@ -152,7 +167,8 @@ impl PyModel {
     }
 
     /// Streaming session bound to `voice`.
-    #[pyo3(signature = (voice, temp=0.3, cfg=2.0, max_frames=300, eos_threshold=-1.0, seed=0))]
+    #[pyo3(signature = (voice, temp=0.3, cfg=2.0, max_frames=300, eos_threshold=-1.0, seed=0, threads=0))]
+    #[allow(clippy::too_many_arguments)]
     fn session(
         &self,
         voice: &PyVoice,
@@ -161,8 +177,9 @@ impl PyModel {
         max_frames: u32,
         eos_threshold: f32,
         seed: u64,
+        threads: u32,
     ) -> PyResult<PySession> {
-        let params = params_from(temp, cfg, max_frames, eos_threshold, seed)?;
+        let params = params_from(temp, cfg, max_frames, eos_threshold, seed, threads)?;
         PySession::create(Arc::clone(&self.inner), &voice.inner, params)
     }
 

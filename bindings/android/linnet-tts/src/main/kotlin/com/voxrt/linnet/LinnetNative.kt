@@ -33,6 +33,7 @@ internal object LinnetNative {
         maxFrames: Int,
         eosThreshold: Float,
         seed: Long,
+        threads: Int,
     ): FloatArray
 
     // Voice
@@ -53,6 +54,7 @@ internal object LinnetNative {
         maxFrames: Int,
         eosThreshold: Float,
         seed: Long,
+        threads: Int,
     ): Long
     external fun sessionFree(session: Long)
     external fun sessionPrime(session: Long, text: String)
