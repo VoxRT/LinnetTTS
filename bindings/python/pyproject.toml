@@ -1,0 +1,28 @@
+[build-system]
+requires = ["maturin>=1.4,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "linnet-tts"
+version = "0.0.1"
+description = "LinnetTTS: lightweight on-device text-to-speech (native runtime)"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+requires-python = ">=3.9"
+dependencies = ["numpy>=1.21"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Rust",
+  "License :: OSI Approved :: Apache Software License",
+  "Operating System :: POSIX :: Linux",
+  "Topic :: Multimedia :: Sound/Audio :: Speech",
+]
+
+[project.urls]
+Homepage = "https://github.com/VoxRT/LinnetTTS"
+
+[tool.maturin]
+python-source = "python"
+module-name = "linnet_tts._native"
+features = ["pyo3/extension-module"]
+strip = true
