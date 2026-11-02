@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Linnet Sample</string>
+    <string name="hint_text">Text to speak</string>
+    <string name="default_text">The quick brown fox jumps over the lazy dog.</string>
+    <string name="speak">Speak</string>
+    <string name="stop">Stop</string>
+    <string name="status_idle">Model files: %1$s</string>
+</resources>

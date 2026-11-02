@@ -7,3 +7,9 @@ target/
 tests/goldens/*.bin
 .DS_Store
 local/
+# Android channel: Gradle state and the cross-built native libraries (bindings/android/build-native.sh)
+bindings/android/.gradle/
+bindings/android/**/build/
+bindings/android/local.properties
+bindings/android/linnet-tts/src/main/jniLibs/
+bindings/android/.kotlin/

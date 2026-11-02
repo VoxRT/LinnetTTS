@@ -9,7 +9,7 @@ concatenate bit-for-bit to the offline result.
 |---|---|---|---|
 | Linux C / C++ | `linux/` | `linnet-tts-<ver>-linux-{x86_64,aarch64}.tar.gz` (`.so`, `.a`, header) | ready |
 | Python | `python/` | wheel `linnet-tts` (import `linnet_tts`), abi3 cp39+ | ready |
-| Android | `android/` | AAR (JNI over the C API) | TODO |
+| Android | `android/` | AAR `com.voxrt.linnet:linnet-tts` (Kotlin API, JNI in Rust), arm64-v8a + x86_64 | ready (publishing TODO) |
 | iOS | `ios/` | xcframework + Swift package | TODO |
 | Browser | `browser/` | WASM (SIMD128) + npm package | TODO |
 
@@ -75,10 +75,30 @@ Long calls release the GIL. Tests: `pytest bindings/python/tests` (needs the mod
 The PyTorch reference package lives in `python/` as `linnet_tts_torch` (pip `linnet-tts-torch`); the two do
 not collide.
 
-## Android, iOS, browser (TODO)
+## Android
 
-- **Android**: `cargo ndk` build of `linnet-tts` for arm64-v8a / armeabi-v7a / x86_64, a JNI layer over
-  `include/linnet_tts.h`, Kotlin `Model` / `Voice` / `Session` mirroring the Python API, packaged as an AAR.
+`bindings/android/` is a Gradle project: the library module `linnet-tts` (AAR, Kotlin API `LinnetModel` /
+`Voice` / `LinnetSession` / `SynthParams` / `AudioTrackPlayer`, package `com.voxrt.linnet`) and a `sample` app.
+The JNI layer is Rust (`bindings/android/jni-crate`, `jni` 0.21) over `runtime/linnet-tts`, cross-built with
+cargo-ndk into `liblinnet_tts_jni.so` for arm64-v8a and x86_64 (minSdk 24, ~0.7 MB per ABI).
+
+```sh
+bindings/android/build-native.sh                 # needs ANDROID_NDK_HOME, cargo-ndk, Android Rust targets
+cd bindings/android && ./gradlew :linnet-tts:assembleRelease :sample:assembleDebug
+```
+
+```kotlin
+val model = LinnetModel(weightsFile, tokenizerFile)
+val voice = model.loadVoice(voiceFile)
+val audio = model.synthesize("Hello there.", voice, SynthParams(seed = 0))   // FloatArray @ 24 kHz
+model.session(voice).use { s -> s.prime("Hello there."); while (true) { val c = s.step() ?: break; player.write(c) } }
+```
+
+Model and voice are shareable across threads; a session is single-threaded. See `bindings/android/README.md`
+for the AAR consumption, ProGuard notes, the sample app and the device tests.
+
+## iOS, browser (TODO)
+
 - **iOS**: `aarch64-apple-ios` + simulator static libraries into an xcframework, a Swift package wrapping the
   C API with the same three types.
 - **Browser**: `wasm32-unknown-unknown` with `+simd128`, a JS wrapper that feeds an AudioWorklet 80 ms at a

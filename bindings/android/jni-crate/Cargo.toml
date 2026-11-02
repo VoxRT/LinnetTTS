@@ -1,0 +1,23 @@
+[package]
+name = "linnet-tts-jni"
+version = "0.0.1"
+edition = "2021"
+license = "Apache-2.0"
+repository = "https://github.com/VoxRT/LinnetTTS"
+description = "JNI layer of the LinnetTTS Android library (com.voxrt.linnet)"
+publish = false
+
+[lib]
+name = "linnet_tts_jni"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+jni = "0.21"
+linnet-tts = { path = "../../../runtime/linnet-tts" }
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "unwind"
+strip = "symbols"

@@ -1,0 +1,25 @@
+[versions]
+agp = "8.6.1"
+kotlin = "2.0.21"
+compileSdk = "35"
+minSdk = "24"
+targetSdk = "35"
+androidxCore = "1.13.1"
+appcompat = "1.7.0"
+material = "1.12.0"
+junit = "4.13.2"
+androidxTestExt = "1.2.1"
+androidxTestRunner = "1.6.2"
+
+[libraries]
+androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "androidxCore" }
+androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
+material = { group = "com.google.android.material", name = "material", version.ref = "material" }
+junit = { group = "junit", name = "junit", version.ref = "junit" }
+androidx-test-ext-junit = { group = "androidx.test.ext", name = "junit", version.ref = "androidxTestExt" }
+androidx-test-runner = { group = "androidx.test", name = "runner", version.ref = "androidxTestRunner" }
+
+[plugins]
+android-library = { id = "com.android.library", version.ref = "agp" }
+android-application = { id = "com.android.application", version.ref = "agp" }
+kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
