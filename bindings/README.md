@@ -19,7 +19,10 @@ channel; see `WEIGHTS_LICENSE.md`.
 ## Threads
 
 Every channel exposes a `threads` setting: `1` runs single-threaded, `0` (the default) picks the fast cores of the
-device (at most 4; big cluster on Android/Linux by `cpuinfo_max_freq`, performance cores on Apple platforms). The
+device on Android/Linux (the big cluster by `cpuinfo_max_freq`, at most 4) and **one thread on Apple platforms**: an
+Apple-silicon step is already 5-7 ms and splits into ~80 tiny regions, so waking a worker on a second performance core
+costs more than the work (A13: 2 threads 11.4 ms vs 6.7 ms per step, 4 threads 47 ms); the pool only shortens the
+prime pass there, and an app that wants a faster first chunk can set `threads` to the performance-core count. The
 model owns one persistent worker pool; the parameter of a session (`SynthParams.threads`, Python/Kotlin keyword
 `threads`) is applied to the model when the session is created, and the C API sets it on the model directly
 (`linnet_set_threads(model, n)`, `linnet_threads(model)`). Work is split across output rows, heads and columns

@@ -252,9 +252,13 @@ pub fn auto_threads() -> usize {
         if let Some(n) = big_cores_sysfs() {
             return n.clamp(1, 4);
         }
+        // Apple silicon: a step is already 5-7 ms and splits into ~80 tiny regions; waking a parked worker
+        // on a second performance core costs more than the work it takes (A13: 2 threads 11.4 ms vs 6.7 ms
+        // per step, 4 threads 47 ms). The pool only shortens the prime pass there, so `auto` means one
+        // thread; callers that prefer a faster first chunk can still ask for `perf_cores()` explicitly.
         #[cfg(any(target_os = "ios", target_os = "macos"))]
-        if let Some(n) = perf_cores_sysctl() {
-            return n.clamp(1, 4);
+        {
+            return 1;
         }
         std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1).clamp(1, 4)
     }
@@ -278,8 +282,9 @@ fn big_cores_sysfs() -> Option<usize> {
     Some(freqs.iter().filter(|&&f| f == max).count())
 }
 
+/// Number of performance cores reported by the kernel (Apple platforms); `None` when unavailable.
 #[cfg(any(target_os = "ios", target_os = "macos"))]
-fn perf_cores_sysctl() -> Option<usize> {
+pub fn perf_cores_sysctl() -> Option<usize> {
     use core::ffi::{c_char, c_int, c_void};
     extern "C" {
         fn sysctlbyname(name: *const c_char, oldp: *mut c_void, oldlenp: *mut usize, newp: *const c_void, newlen: usize) -> c_int;

@@ -170,7 +170,7 @@ result). Timings on the 67-step sentence (5.44 s of audio): threads 1 — prime 
 4.57 ms (worst 7.2), RTF 6.6 %; threads 4 — mean step 17.2 ms (worst 97 ms), RTF 23 %: oversubscribing onto the
 efficiency cores hurts badly, which is why `auto` is capped at the performance-core count. Ten utterances back to back
 with `auto`: 333 steps, 26.6 s of audio in 3.9 s (RTF 14.6 %, includes ten primes and sustained-load scheduling).
-Recommended default on iOS: `threads = 0`.
+Recommended default on iOS: `threads = 0`, which the runtime resolves to one thread on Apple platforms (see below).
 
 Step time under real-time pacing: when the sample paces synthesis to playback (the player blocks once 400 ms of
 audio is queued), the CPU idles about 75 ms of every 80 ms step and iOS lowers the core clock and moves the
@@ -184,4 +184,7 @@ Baseline device (iPhone 11, A13, iOS 26, sample app, 80-step sentence): threads 
 107–116 ms, mean step 7.1 ms (worst 9.6) without pacing; threads 2 (auto) — prime 61–74 ms, first chunk 72–86 ms,
 mean step 6.9–8.1 ms (the second thread helps the prime, not the step); under real-time pacing both show ≈ 22 ms
 per step for the power-management reason described above. The A13 is the oldest device the package targets and
-leaves a ten-fold margin against the 80 ms step budget.
+leaves a ten-fold margin against the 80 ms step budget. Hosted XCTests on the A13: 6/6, audio MD5s identical to the A15 and
+the Mac; threads 1 — 6.7 ms per step, threads 2 — 11.4 ms (worst 31), threads 4 — 47 ms: the pool hurts the step on
+Apple silicon, so `threads = 0` now means one thread there (the prime pass is the only part that gains from a second
+core, 97 → 68 ms).
