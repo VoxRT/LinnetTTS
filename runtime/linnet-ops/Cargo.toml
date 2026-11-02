@@ -4,5 +4,15 @@ version = "0.0.1"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+description = "Numeric kernels for the LinnetTTS runtime: scalar reference implementations with aarch64 NEON, x86_64 AVX2+FMA and WASM SIMD128 fast paths"
+rust-version = "1.85"
 
 [dependencies]
+
+[features]
+default = []
+
+# Route every dispatcher through its scalar reference. Useful for
+# A/B parity checks and for capturing a pre-SIMD performance baseline.
+# Never enable for shipping builds.
+force-scalar = []
