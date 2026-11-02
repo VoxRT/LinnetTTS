@@ -179,3 +179,9 @@ management, not runtime cost: `-noaudio` or `-nopace` (synthesis never blocks on
 with the audio engine running and the UI updating. Measure throughput without pacing; for the tightest
 real-time margin on slow phones, synthesize in bursts with a larger queue (`LinnetPlayer(bufferMillis:)`, 1–2 s)
 so the core runs at full clock and then sleeps. `device-pace-experiment.sh` runs these modes on a device.
+
+Baseline device (iPhone 11, A13, iOS 26, sample app, 80-step sentence): threads 1 — prime 97–106 ms, first chunk
+107–116 ms, mean step 7.1 ms (worst 9.6) without pacing; threads 2 (auto) — prime 61–74 ms, first chunk 72–86 ms,
+mean step 6.9–8.1 ms (the second thread helps the prime, not the step); under real-time pacing both show ≈ 22 ms
+per step for the power-management reason described above. The A13 is the oldest device the package targets and
+leaves a ten-fold margin against the 80 ms step budget.
