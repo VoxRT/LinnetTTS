@@ -219,6 +219,41 @@ fn decoder_matches_golden_wav() {
     }
 }
 
+/// The decoder takes the two frames of a step through the network at
+/// once; that must not change a single bit against frame-by-frame
+/// decoding, for both weight precisions and for the offline entry point.
+#[test]
+fn decoder_frame_batching_is_bit_exact() {
+    let Some(t) = tokenizer() else { return };
+    for w in [weights(), weights_fp16()].into_iter().flatten() {
+        let model = Linnet::load(&w, &t).unwrap();
+        let dec = model.decoder();
+        let frames_per_step = model.latent_dim() / dec.config().latent_dim;
+        assert_eq!(frames_per_step, 2);
+        let bits = |v: &[f32]| v.iter().map(|x| x.to_bits()).collect::<Vec<_>>();
+        for g in goldens() {
+            let one = dec.decode(&g.latents, 1).unwrap();
+            let two = dec.decode(&g.latents, 2).unwrap();
+            assert_eq!(bits(&one), bits(&two), "{}: {} frame batching changed the bytes", g.name, w.display());
+            // Frame by frame through the streaming entry point as well.
+            let ld = dec.config().latent_dim;
+            let spf = dec.samples_per_frame();
+            let mut st = dec.new_state();
+            let mut sc = dec.new_scratch(1);
+            let mut streamed = vec![0.0f32; one.len()];
+            for j in 0..g.latents.len() / ld {
+                dec.stream_step(&g.latents[j * ld..(j + 1) * ld], &mut st, &mut sc, &mut streamed[j * spf..(j + 1) * spf]).unwrap();
+            }
+            assert_eq!(bits(&one), bits(&streamed), "{}: streamed single frames", g.name);
+            // Linnet::decode is the batched decode with the output delay applied.
+            let delayed = model.decode(&g.latents).unwrap();
+            let delay = model.config().output_delay;
+            assert_eq!(bits(&delayed[..one.len() - delay]), bits(&one[delay..]), "{}: output delay", g.name);
+            assert!(delayed[one.len() - delay..].iter().all(|v| *v == 0.0));
+        }
+    }
+}
+
 #[test]
 fn fp16_drift_is_bounded() {
     let (Some(w), Some(t), Some(v)) = (weights_fp16(), tokenizer(), voice()) else { return };

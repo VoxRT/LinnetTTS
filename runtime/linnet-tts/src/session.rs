@@ -134,7 +134,8 @@ impl Linnet {
         if latents.is_empty() {
             return Ok(Vec::new());
         }
-        let mut wav = self.decoder.decode(latents)?;
+        let frames_per_step = self.cfg.lm.latent_dim / self.cfg.decoder.latent_dim;
+        let mut wav = self.decoder.decode(latents, frames_per_step)?;
         let delay = self.cfg.output_delay.min(wav.len());
         wav.drain(..delay);
         wav.resize(wav.len() + delay, 0.0);
@@ -209,7 +210,8 @@ impl<'m> Session<'m> {
             states,
             sc: model.lm.new_scratch(n_streams, cap),
             dec_state: model.decoder.new_state(),
-            dec_sc: model.decoder.new_scratch(),
+            // The two codec frames of one step go through the decoder together.
+            dec_sc: model.decoder.new_scratch(ld / cfg.decoder.latent_dim),
             rng: Xoshiro256StarStar::new(params.seed),
             z: vec![0.0; d],
             z_rows: vec![0.0; n_streams * d],
@@ -328,9 +330,6 @@ impl<'m> Session<'m> {
         let model = self.model;
         let lm = &model.lm;
         let d = model.cfg.lm.d_model;
-        let ld = model.cfg.lm.latent_dim;
-        let dec_ld = model.cfg.decoder.latent_dim;
-        let spf = model.decoder.samples_per_frame();
 
         if self.tail_pending {
             self.tail_pending = false;
@@ -346,13 +345,12 @@ impl<'m> Session<'m> {
             return self.end();
         }
         lm.denormalize(&self.latent_norm, &mut self.latent_codec);
-        for half in 0..ld / dec_ld {
-            let (st, sc) = (&mut self.dec_state, &mut self.dec_sc);
-            model
-                .decoder
-                .stream_step(&self.latent_codec[half * dec_ld..(half + 1) * dec_ld], st, sc, &mut self.chunk[half * spf..(half + 1) * spf])
-                .expect("decoder buffers are sized at construction");
-        }
+        // Both codec frames of the step in one call: the decoder weights
+        // are streamed once; the output is the same as frame by frame.
+        model
+            .decoder
+            .stream_steps(&self.latent_codec, &mut self.dec_state, &mut self.dec_sc, &mut self.chunk)
+            .expect("decoder buffers are sized at construction");
         self.frames += 1;
 
         // Next step's conditioning, unless the frame budget is spent.
