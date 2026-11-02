@@ -41,7 +41,7 @@ if [ "$what" = tests ] || [ "$what" = all ]; then
   cp "$voice" "$tdir/voice.npy"
   xcodebuild test -project "$here/Sample/LinnetSample.xcodeproj" -scheme LinnetSample \
     -destination "platform=iOS,id=$LINNET_DEVICE" -derivedDataPath "$dd" \
-    -allowProvisioningUpdates "${team_arg[@]}" 2>&1 | tee "$dd.test.log" \
+    -allowProvisioningUpdates -allowProvisioningDeviceRegistration "${team_arg[@]}" 2>&1 | tee "$dd.test.log" \
     | grep -E "\[linnet\]|Test Case.*(passed|failed|skipped)|error:|TEST .*(SUCCEEDED|FAILED)|Executed" \
     | sed 's/^.*\] \[linnet\]/[linnet]/' | sort -u
   rm -f "$tdir/linnet-en-35m.fp16.safetensors" "$tdir/tokenizer.model" "$tdir/voice.npy"
@@ -51,7 +51,7 @@ if [ "$what" = sample ] || [ "$what" = all ]; then
   echo "== sample app on $LINNET_DEVICE"
   xcodebuild build -project "$here/Sample/LinnetSample.xcodeproj" -scheme LinnetSample -configuration Release \
     -destination "platform=iOS,id=$LINNET_DEVICE" -derivedDataPath "$dd" \
-    -allowProvisioningUpdates "${team_arg[@]}" 2>&1 | grep -E "error:|BUILD" || true
+    -allowProvisioningUpdates -allowProvisioningDeviceRegistration "${team_arg[@]}" 2>&1 | grep -E "error:|BUILD" || true
   app="$dd/Build/Products/Release-iphoneos/LinnetSample.app"
   xcrun devicectl device install app --device "$LINNET_DEVICE" "$app"
   for f in "$assets/linnet-en-35m.fp16.safetensors" "$assets/tokenizer.model"; do

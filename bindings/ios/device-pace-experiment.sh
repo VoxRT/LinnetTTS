@@ -13,7 +13,7 @@ bundle=com.voxrt.linnet.sample
 text="Honestly, I cannot schedule the tomato and herb advertisement for either route this quarter after the news at half past four."
 "$here/build-xcframework.sh" >/dev/null
 xcodebuild build -project "$here/Sample/LinnetSample.xcodeproj" -scheme LinnetSample -configuration Release \
-  -destination "platform=iOS,id=$LINNET_DEVICE" -derivedDataPath "$dd" -allowProvisioningUpdates \
+  -destination "platform=iOS,id=$LINNET_DEVICE" -derivedDataPath "$dd" -allowProvisioningUpdates -allowProvisioningDeviceRegistration \
   DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM" 2>&1 | grep -E "BUILD|error:" || true
 xcrun devicectl device install app --device "$LINNET_DEVICE" "$dd/Build/Products/Release-iphoneos/LinnetSample.app" | grep -i -E "installed|error" || true
 for mode in "-noaudio" "-nopace -quiet" "-nopace" ""; do
