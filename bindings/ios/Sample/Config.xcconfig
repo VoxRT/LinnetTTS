@@ -1,0 +1,5 @@
+// Shared build settings of the sample. Machine-specific signing lives in an untracked
+// bindings/ios/local.xcconfig (ignored by git), for example:
+//     DEVELOPMENT_TEAM = ABCDE12345
+// or pass DEVELOPMENT_TEAM=... on the xcodebuild command line.
+#include? "../local.xcconfig"

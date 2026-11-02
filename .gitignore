@@ -13,3 +13,15 @@ bindings/android/**/build/
 bindings/android/local.properties
 bindings/android/linnet-tts/src/main/jniLibs/
 bindings/android/.kotlin/
+# iOS channel: built xcframework, SwiftPM and Xcode state (bindings/ios/build-xcframework.sh)
+bindings/ios/dist/
+bindings/ios/LinnetTTS/LinnetTTS.xcframework/
+bindings/ios/LinnetTTS/.build/
+bindings/ios/LinnetTTS/.swiftpm/
+bindings/ios/Sample/build/
+bindings/ios/Sample/*.xcodeproj/xcuserdata/
+bindings/ios/Sample/*.xcodeproj/project.xcworkspace/xcuserdata/
+bindings/ios/Sample/*.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/
+bindings/ios/local.xcconfig
+bindings/ios/LinnetTTS/Tests/LinnetTTSTests/Assets/*
+!bindings/ios/LinnetTTS/Tests/LinnetTTSTests/Assets/.gitkeep

@@ -10,7 +10,7 @@ concatenate bit-for-bit to the offline result.
 | Linux C / C++ | `linux/` | `linnet-tts-<ver>-linux-{x86_64,aarch64}.tar.gz` (`.so`, `.a`, header) | ready |
 | Python | `python/` | wheel `linnet-tts` (import `linnet_tts`), abi3 cp39+ | ready |
 | Android | `android/` | AAR `com.voxrt.linnet:linnet-tts` (Kotlin API, JNI in Rust), arm64-v8a + x86_64 | ready (publishing TODO) |
-| iOS | `ios/` | xcframework + Swift package | TODO |
+| iOS | `ios/` | `LinnetTTS.xcframework` (static, ios-arm64 + simulator + macos-arm64) + Swift package `LinnetTTS` | ready (publishing TODO) |
 | Browser | `browser/` | WASM (SIMD128) + npm package | not planned for this release |
 
 Model weights (`linnet-en-35m.fp16.safetensors`, `tokenizer.model`) and voice files are not part of any
@@ -107,9 +107,31 @@ model.session(voice).use { s -> s.prime("Hello there."); while (true) { val c = 
 Model and voice are shareable across threads; a session is single-threaded. See `bindings/android/README.md`
 for the AAR consumption, ProGuard notes, the sample app and the device tests.
 
-## iOS (TODO), browser (deferred)
+## iOS
 
-- **iOS**: `aarch64-apple-ios` + simulator static libraries into an xcframework, a Swift package wrapping the
-  C API with the same three types.
-- **Browser**: deferred to a later release. The runtime keeps compiling for `wasm32-unknown-unknown` (single-threaded) so the
-  option stays open, but no JS wrapper or npm package is part of this release.
+`bindings/ios/` is a Swift package `LinnetTTS` (`LinnetModel` / `Voice` / `LinnetSession` / `SynthParams` /
+`LinnetError` / `LinnetPlayer`) over the C API, shipped as a static `LinnetTTS.xcframework` built by
+`bindings/ios/build-xcframework.sh` (slices: ios-arm64, ios simulator arm64 + x86_64, macos-arm64 for host
+tests), plus a SwiftUI sample app (`bindings/ios/Sample`) and XCTests that run on the macOS host, the simulator
+and, hosted by the sample app, on a device.
+
+```sh
+bindings/ios/build-xcframework.sh                # needs Xcode and the Apple Rust targets
+cd bindings/ios/LinnetTTS && LINNET_ASSETS=../../../local swift test -c release
+```
+
+```swift
+let model = try LinnetModel(weightsPath: weights, tokenizerPath: tokenizer)
+let voice = try model.loadVoice(path: voicePath)
+let audio = try model.synthesize(text: "Hello there.", voice: voice, params: SynthParams(seed: 0))  // [Float] @ 24 kHz
+let s = try model.session(voice: voice); try s.prime(text: "Hello there.")
+while let c = try s.step() { try player.write(c) }
+```
+
+Model and voice are shareable across threads; a session is single-threaded. See `bindings/ios/README.md` for
+SPM integration, signing notes, the sample app and the tests.
+
+## Browser (deferred)
+
+Deferred to a later release. The runtime keeps compiling for `wasm32-unknown-unknown` (single-threaded) so the
+option stays open, but no JS wrapper or npm package is part of this release.
