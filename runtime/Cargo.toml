@@ -6,3 +6,13 @@ members = ["linnet-ops", "linnet-tts"]
 edition = "2021"
 license = "Apache-2.0"
 repository = "https://github.com/VoxRT/LinnetTTS"
+
+# Whole-program optimisation for the shipped library and the examples.
+# Unwinding stays on so the C API can turn a panic into an error code.
+# No target-cpu is set: the kernels select NEON / AVX2 / SIMD128 by
+# themselves (see bindings/android/README.md for the optional flag).
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "unwind"

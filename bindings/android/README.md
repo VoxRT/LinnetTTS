@@ -83,6 +83,13 @@ runtime's own cdylib that cargo-ndk copies alongside; the Gradle build fails wit
 the `.so` files are missing. Native library sizes (0.0.1): arm64-v8a 680 KB, x86_64 786 KB. Nothing but
 `libc`, `libm` and `libdl` is required at run time; minSdk 24.
 
+The runtime's release profile (fat LTO, one codegen unit) applies to these builds too. No `target-cpu` is set:
+the kernels pick NEON at compile time on every AArch64 target and need no further flags. Scheduling for a
+specific core is possible with, for example, `RUSTFLAGS="-C target-cpu=cortex-a73" bindings/android/build-native.sh`,
+but it is optional: on a Snapdragon 662 (Cortex-A73 class cores) it changed neither the output bytes nor the
+speed in our measurements (43.7 vs 42.2 ms per step without the flag, within the run-to-run spread), so the
+default stays portable.
+
 Without cargo-ndk the NDK's clang can be used directly:
 
 ```sh
