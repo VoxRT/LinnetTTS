@@ -50,6 +50,11 @@ void linnet_model_free(linnet_model *model);
 uint32_t linnet_sample_rate(const linnet_model *model);
 /* Largest chunk linnet_session_step can write (samples per LM step, 1920). */
 size_t linnet_samples_per_step(const linnet_model *model);
+/* Threads the model uses: 1 = single-threaded, 0 = automatic (the fast cores,
+ * at most 4). The default is automatic. The audio is identical for every
+ * value; the setting applies to existing and future sessions. */
+int linnet_set_threads(linnet_model *model, int threads);
+int linnet_threads(const linnet_model *model);
 
 /* Voice: [T, 48] float32 latents, .npy file or in-memory buffer. */
 int linnet_voice_load(const char *path, linnet_voice **out_voice);

@@ -102,9 +102,12 @@ unsafe fn cstr<'a>(p: *const c_char) -> Option<&'a str> {
     CStr::from_ptr(p).to_str().ok()
 }
 
-unsafe fn params_or_default(p: *const linnet_params) -> SynthParams {
+/// The C parameters carry no thread count: a session keeps the model's
+/// current setting (`linnet_set_threads`).
+unsafe fn params_or_default(p: *const linnet_params, model: &Linnet) -> SynthParams {
+    let threads = model.threads();
     if p.is_null() {
-        return SynthParams::default();
+        return SynthParams { threads, ..SynthParams::default() };
     }
     let p = &*p;
     SynthParams {
@@ -113,6 +116,7 @@ unsafe fn params_or_default(p: *const linnet_params) -> SynthParams {
         max_frames: p.max_frames as usize,
         eos_threshold: p.eos_threshold,
         seed: p.seed,
+        threads,
     }
 }
 
@@ -170,6 +174,29 @@ pub unsafe extern "C" fn linnet_sample_rate(model: *const linnet_model) -> u32 {
         return 0;
     }
     (*model).inner.sample_rate()
+}
+
+/// Threads the model uses from now on: 1 = single-threaded, 0 = automatic
+/// (fast cores, at most 4). Applies to sessions created before and after
+/// the call; the audio is identical for every value. Negative is invalid.
+#[no_mangle]
+pub unsafe extern "C" fn linnet_set_threads(model: *mut linnet_model, threads: c_int) -> c_int {
+    guard(|| {
+        if model.is_null() || threads < 0 {
+            return LINNET_ERR_INVALID_ARG;
+        }
+        (*model).inner.set_threads(threads as usize);
+        LINNET_OK
+    })
+}
+
+/// Threads the model currently uses (0 on a null handle).
+#[no_mangle]
+pub unsafe extern "C" fn linnet_threads(model: *const linnet_model) -> c_int {
+    if model.is_null() {
+        return 0;
+    }
+    (*model).inner.threads() as c_int
 }
 
 /// Largest chunk `linnet_session_step` can write (samples per LM step).
@@ -247,7 +274,7 @@ pub unsafe extern "C" fn linnet_session_new(
             return LINNET_ERR_INVALID_ARG;
         }
         let m: &'static Linnet = &(*model).inner;
-        let p = params_or_default(params);
+        let p = params_or_default(params, m);
         match Session::new(m, &(*voice).inner, p) {
             Ok(s) => {
                 *out_session = Box::into_raw(Box::new(linnet_session { inner: s }));
@@ -336,7 +363,7 @@ pub unsafe extern "C" fn linnet_synthesize(
             set_error("text is null or not UTF-8");
             return LINNET_ERR_INVALID_ARG;
         };
-        let p = params_or_default(params);
+        let p = params_or_default(params, &(*model).inner);
         let wav = match (*model).inner.synthesize(t, &(*voice).inner, p) {
             Ok(w) => w,
             Err(e) => return status_of(&e),

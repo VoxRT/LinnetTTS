@@ -23,13 +23,20 @@
 //! overlap-add still run one frame of `up_factor` columns at a time in the
 //! original order. Offline decoding is the same loop, so offline and
 //! streamed output agree bit for bit whatever the batching.
+//!
+//! On the model's thread pool the pointwise products are split over
+//! output rows, the depthwise convolution and LayerNorm over frames and
+//! the spectral columns (exp, sincos, iFFT, window) over columns; each
+//! value is still produced by one thread in the same order, so the thread
+//! count does not change the output either.
 
 use linnet_ops::fft::{hann_periodic, irfft_real, FftPlan};
 use linnet_ops::ops;
 
 use crate::config::DecoderConfig;
 use crate::error::{Error, Result};
-use crate::weights::{ConvNeXtWeights, DecoderWeights};
+use crate::pool::{SendPtr, ThreadPool};
+use crate::weights::{Act, ConvNeXtWeights, DecoderWeights};
 
 /// `nn.LayerNorm` default epsilon.
 const LN_EPS: f32 = 1e-5;
@@ -55,6 +62,16 @@ impl DecoderState {
     }
 }
 
+/// Per-column buffers of the spectral head (one set per STFT column so
+/// the columns can run concurrently).
+struct ColScratch {
+    cosb: Vec<f32>,
+    sinb: Vec<f32>,
+    spec: Vec<(f32, f32)>,
+    fft_buf: Vec<(f64, f64)>,
+    frame: Vec<f32>,
+}
+
 /// Reusable buffers for up to `max_frames` latent frames per call. Nothing
 /// is allocated after construction.
 pub struct DecoderScratch {
@@ -68,11 +85,7 @@ pub struct DecoderScratch {
     pw2: Vec<f32>,
     hn: Vec<f32>,
     ho: Vec<f32>,
-    cosb: Vec<f32>,
-    sinb: Vec<f32>,
-    spec: Vec<(f32, f32)>,
-    fft_buf: Vec<(f64, f64)>,
-    frame: Vec<f32>,
+    cols: Vec<ColScratch>,
     chunk: Vec<f32>,
 }
 
@@ -159,11 +172,15 @@ impl VocosDecoder {
             pw2: vec![0.0; t_max * d],
             hn: vec![0.0; t_max * cfg.d_high],
             ho: vec![0.0; t_max * 2 * n_bins],
-            cosb: vec![0.0; n_bins],
-            sinb: vec![0.0; n_bins],
-            spec: vec![(0.0, 0.0); n_bins],
-            fft_buf: vec![(0.0, 0.0); cfg.n_fft],
-            frame: vec![0.0; cfg.n_fft],
+            cols: (0..t_max)
+                .map(|_| ColScratch {
+                    cosb: vec![0.0; n_bins],
+                    sinb: vec![0.0; n_bins],
+                    spec: vec![(0.0, 0.0); n_bins],
+                    fft_buf: vec![(0.0, 0.0); cfg.n_fft],
+                    frame: vec![0.0; cfg.n_fft],
+                })
+                .collect(),
             chunk: vec![0.0; self.spf + cfg.ola_tail()],
         }
     }
@@ -180,7 +197,7 @@ impl VocosDecoder {
     }
 
     /// One causal ConvNeXt block over `t` frames of width `d`, in place.
-    fn convnext(&self, bw: &ConvNeXtWeights, x: &mut [f32], t: usize, d: usize, tail: &mut [f32], sc: &mut DecoderScratch) {
+    fn convnext(&self, bw: &ConvNeXtWeights, x: &mut [f32], t: usize, d: usize, tail: &mut [f32], sc: &mut DecoderScratch, pool: &ThreadPool) {
         let k = self.cfg.kernel;
         let ctx = (k - 1) * d;
         debug_assert_eq!(x.len(), t * d);
@@ -189,24 +206,30 @@ impl VocosDecoder {
         xc[ctx..].copy_from_slice(x);
         tail.copy_from_slice(&xc[t * d..t * d + ctx]);
         let h = &mut sc.h[..t * d];
-        ops::conv1d_depthwise_nlc(xc, &bw.dw_w, &bw.dw_b, d, k, k - 1 + t, h);
-        let e = self.cfg.expand * d;
         let rows = &mut sc.rows[..t * d];
+        // Depthwise convolution and LayerNorm, one frame per chunk: the
+        // convolution over a window of `k` input frames is exactly one
+        // frame of the batched call (sequential taps per channel).
+        {
+            let xc: &[f32] = xc;
+            let hp = SendPtr::new(h);
+            let rp = SendPtr::new(rows);
+            pool.run(t, &|r| {
+                // SAFETY: frame r owns row r of h and of rows.
+                let h_r = unsafe { hp.slice(r * d, d) };
+                let row = unsafe { rp.slice(r * d, d) };
+                ops::conv1d_depthwise_nlc(&xc[r * d..(r + k) * d], &bw.dw_w, &bw.dw_b, d, k, k, h_r);
+                ops::layer_norm(h_r, &bw.norm_w, &bw.norm_b, d, 1, LN_EPS, row);
+            });
+        }
+        let e = self.cfg.expand * d;
         let ff = &mut sc.ff[..t * e];
         let pw2 = &mut sc.pw2[..t * d];
-        for r in 0..t {
-            ops::layer_norm(&h[r * d..(r + 1) * d], &bw.norm_w, &bw.norm_b, d, 1, LN_EPS, &mut rows[r * d..(r + 1) * d]);
-        }
         // All t rows through the pointwise layers at once: the block
         // weights are streamed from memory once per call, not once per row.
-        bw.pw1.gemm(rows, t, ff);
+        bw.pw1.gemm_par(pool, rows, t, ff, Some(&bw.pw1_b), Act::Gelu);
+        bw.pw2.gemm_par(pool, ff, t, pw2, Some(&bw.pw2_b), Act::None);
         for r in 0..t {
-            ops::add_inplace(&mut ff[r * e..(r + 1) * e], &bw.pw1_b);
-        }
-        ops::gelu_inplace(ff);
-        bw.pw2.gemm(ff, t, pw2);
-        for r in 0..t {
-            ops::add_inplace(&mut pw2[r * d..(r + 1) * d], &bw.pw2_b);
             ops::add_mul_inplace(&mut x[r * d..(r + 1) * d], &pw2[r * d..(r + 1) * d], &bw.gamma);
         }
     }
@@ -215,7 +238,7 @@ impl VocosDecoder {
     /// LayerNorm per column, one GEMM for all columns, bias. The result
     /// (`n_cols × 2·n_bins`: log-magnitudes then phases) is left in
     /// `sc.ho`.
-    fn head_rows(&self, x: &[f32], n_cols: usize, sc: &mut DecoderScratch) {
+    fn head_rows(&self, x: &[f32], n_cols: usize, sc: &mut DecoderScratch, pool: &ThreadPool) {
         let d = self.cfg.d_high;
         let nb2 = 2 * self.cfg.n_bins();
         debug_assert_eq!(x.len(), n_cols * d);
@@ -224,42 +247,46 @@ impl VocosDecoder {
             ops::layer_norm(&x[c * d..(c + 1) * d], &self.w.head_norm_w, &self.w.head_norm_b, d, 1, LN_EPS, &mut hn[c * d..(c + 1) * d]);
         }
         let ho = &mut sc.ho[..n_cols * nb2];
-        self.w.head.gemm(hn, n_cols, ho);
-        for c in 0..n_cols {
-            ops::add_inplace(&mut ho[c * nb2..(c + 1) * nb2], &self.w.head_b);
-        }
+        self.w.head.gemm_par(pool, hn, n_cols, ho, Some(&self.w.head_b), Act::None);
     }
 
-    /// Column `col` of `sc.ho` → windowed time frame in `sc.frame[..win]`.
-    fn column_frame(&self, col: usize, sc: &mut DecoderScratch) {
+    /// Columns `0..n_cols` of `sc.ho` → windowed time frames in
+    /// `sc.cols[c].frame[..win]`, one column per chunk.
+    fn column_frames(&self, n_cols: usize, sc: &mut DecoderScratch, pool: &ThreadPool) {
         let cfg = &self.cfg;
         let n_bins = cfg.n_bins();
-        let (mag, phase) = sc.ho[col * 2 * n_bins..(col + 1) * 2 * n_bins].split_at_mut(n_bins);
-        ops::exp_clamp_inplace(mag, cfg.logmag_min as f32, cfg.logmag_max as f32);
-        ops::sincos_into(phase, &mut sc.cosb, &mut sc.sinb);
-        for b in 0..n_bins {
-            sc.spec[b] = (mag[b] * sc.cosb[b], mag[b] * sc.sinb[b]);
-        }
-        // DC and Nyquist are real.
-        sc.spec[0].1 = 0.0;
-        sc.spec[n_bins - 1].1 = 0.0;
-        irfft_real(&self.fft, &sc.spec, &mut sc.fft_buf, &mut sc.frame);
-        for i in 0..cfg.win {
-            sc.frame[i] *= self.hann[i];
-        }
+        let hop = SendPtr::new(&mut sc.ho);
+        let cp = SendPtr::new(&mut sc.cols);
+        pool.run(n_cols, &|col| {
+            // SAFETY: column col owns row col of ho and sc.cols[col].
+            let (mag, phase) = unsafe { hop.slice(col * 2 * n_bins, 2 * n_bins) }.split_at_mut(n_bins);
+            let c = &mut unsafe { cp.slice(col, 1) }[0];
+            ops::exp_clamp_inplace(mag, cfg.logmag_min as f32, cfg.logmag_max as f32);
+            ops::sincos_into(phase, &mut c.cosb, &mut c.sinb);
+            for b in 0..n_bins {
+                c.spec[b] = (mag[b] * c.cosb[b], mag[b] * c.sinb[b]);
+            }
+            // DC and Nyquist are real.
+            c.spec[0].1 = 0.0;
+            c.spec[n_bins - 1].1 = 0.0;
+            irfft_real(&self.fft, &c.spec, &mut c.fft_buf, &mut c.frame);
+            for i in 0..cfg.win {
+                c.frame[i] *= self.hann[i];
+            }
+        });
     }
 
     /// Decode one latent frame (`latent_dim` values) into
     /// `samples_per_frame()` samples, advancing the stream state.
-    pub fn stream_step(&self, latent: &[f32], st: &mut DecoderState, sc: &mut DecoderScratch, out: &mut [f32]) -> Result<()> {
-        self.stream_steps(latent, st, sc, out)
+    pub fn stream_step(&self, latent: &[f32], st: &mut DecoderState, sc: &mut DecoderScratch, out: &mut [f32], pool: &ThreadPool) -> Result<()> {
+        self.stream_steps(latent, st, sc, out, pool)
     }
 
     /// Decode `n` consecutive latent frames (`n × latent_dim` values,
     /// `1 ≤ n ≤ sc.max_frames()`) into `n · samples_per_frame()` samples,
     /// advancing the stream state. Bit-identical to `n` calls of
     /// [`VocosDecoder::stream_step`]; the weights are read once.
-    pub fn stream_steps(&self, latents: &[f32], st: &mut DecoderState, sc: &mut DecoderScratch, out: &mut [f32]) -> Result<()> {
+    pub fn stream_steps(&self, latents: &[f32], st: &mut DecoderState, sc: &mut DecoderScratch, out: &mut [f32], pool: &ThreadPool) -> Result<()> {
         let cfg = &self.cfg;
         let ld = cfg.latent_dim;
         let nf = latents.len() / ld;
@@ -285,29 +312,23 @@ impl VocosDecoder {
         let mut x_low = std::mem::take(&mut sc.x_low);
         {
             let xl = &mut x_low[..nf * d_low];
-            self.w.in_proj.gemm(latents, nf, xl);
-            for r in 0..nf {
-                ops::add_inplace(&mut xl[r * d_low..(r + 1) * d_low], &self.w.in_proj_b);
-            }
+            self.w.in_proj.gemm_par(pool, latents, nf, xl, Some(&self.w.in_proj_b), Act::None);
             for (bw, tail) in self.w.low.iter().zip(st.low_tails.iter_mut()) {
-                self.convnext(bw, xl, nf, d_low, tail, sc);
+                self.convnext(bw, xl, nf, d_low, tail, sc, pool);
             }
         }
         let mut x_high = std::mem::take(&mut sc.x_high);
         {
             let xh = &mut x_high[..n_cols * d_high];
-            let ud = uf * d_high;
-            self.w.up.gemm(&x_low[..nf * d_low], nf, xh);
-            for r in 0..nf {
-                ops::add_inplace(&mut xh[r * ud..(r + 1) * ud], &self.w.up_b);
-            }
+            self.w.up.gemm_par(pool, &x_low[..nf * d_low], nf, xh, Some(&self.w.up_b), Act::None);
             for (bw, tail) in self.w.high.iter().zip(st.high_tails.iter_mut()) {
-                self.convnext(bw, xh, n_cols, d_high, tail, sc);
+                self.convnext(bw, xh, n_cols, d_high, tail, sc, pool);
             }
-            self.head_rows(xh, n_cols, sc);
+            self.head_rows(xh, n_cols, sc, pool);
         }
         sc.x_low = x_low;
         sc.x_high = x_high;
+        self.column_frames(n_cols, sc, pool);
 
         // Overlap-add one frame (uf windowed columns) at a time, in the
         // original order: merge with the carried tail, normalise by the
@@ -316,12 +337,11 @@ impl VocosDecoder {
         let win = cfg.win;
         let tail_len = cfg.ola_tail();
         let n_emit = self.spf;
-        let mut chunk = std::mem::take(&mut sc.chunk);
+        let chunk = &mut sc.chunk;
         for f in 0..nf {
             chunk.iter_mut().for_each(|v| *v = 0.0);
             for u in 0..uf {
-                self.column_frame(f * uf + u, sc);
-                ops::add_inplace(&mut chunk[u * hop..u * hop + win], &sc.frame[..win]);
+                ops::add_inplace(&mut chunk[u * hop..u * hop + win], &sc.cols[f * uf + u].frame[..win]);
             }
             for i in 0..tail_len {
                 chunk[i] += st.ola_tail[i];
@@ -334,7 +354,6 @@ impl VocosDecoder {
             }
             st.col_idx += uf;
         }
-        sc.chunk = chunk;
         Ok(())
     }
 
@@ -342,7 +361,7 @@ impl VocosDecoder {
     /// samples (no output-delay handling; see `Linnet::decode`), taking up
     /// to `frames_per_call` frames through the network at a time (the
     /// result does not depend on this number).
-    pub fn decode(&self, latents: &[f32], frames_per_call: usize) -> Result<Vec<f32>> {
+    pub fn decode(&self, latents: &[f32], frames_per_call: usize, pool: &ThreadPool) -> Result<Vec<f32>> {
         let ld = self.cfg.latent_dim;
         if latents.len() % ld != 0 {
             return Err(Error::Invalid(format!(
@@ -358,7 +377,7 @@ impl VocosDecoder {
         let mut j = 0;
         while j < t {
             let nf = batch.min(t - j);
-            self.stream_steps(&latents[j * ld..(j + nf) * ld], &mut st, &mut sc, &mut out[j * self.spf..(j + nf) * self.spf])?;
+            self.stream_steps(&latents[j * ld..(j + nf) * ld], &mut st, &mut sc, &mut out[j * self.spf..(j + nf) * self.spf], pool)?;
             j += nf;
         }
         Ok(out)
@@ -497,9 +516,12 @@ mod tests {
     }
 
     /// Streaming two frames per call, one frame per call and the offline
-    /// decode with any batch size must produce the same bytes.
+    /// decode with any batch size — on one thread or several — must
+    /// produce the same bytes.
     #[test]
-    fn batched_frames_are_bit_identical_to_single_frames() {
+    fn batched_frames_and_threads_are_bit_identical_to_single_frames() {
+        let one_thread = ThreadPool::new(1);
+        let pools = [ThreadPool::new(1), ThreadPool::new(2), ThreadPool::new(3), ThreadPool::new(5)];
         for half in [false, true] {
             let dec = tiny_decoder(half);
             let ld = dec.config().latent_dim;
@@ -512,51 +534,44 @@ mod tests {
             let mut sc1 = dec.new_scratch(1);
             let mut one = vec![0.0f32; t * spf];
             for j in 0..t {
-                dec.stream_step(&latents[j * ld..(j + 1) * ld], &mut st1, &mut sc1, &mut one[j * spf..(j + 1) * spf]).unwrap();
-            }
-
-            let mut st2 = dec.new_state();
-            let mut sc2 = dec.new_scratch(2);
-            let mut two = vec![0.0f32; t * spf];
-            let mut j = 0;
-            while j < t {
-                let nf = 2.min(t - j);
-                dec.stream_steps(&latents[j * ld..(j + nf) * ld], &mut st2, &mut sc2, &mut two[j * spf..(j + nf) * spf]).unwrap();
-                j += nf;
-            }
-            assert_eq!(bits(&one), bits(&two), "half={half}: two frames per call");
-
-            let mut st3 = dec.new_state();
-            let mut sc3 = dec.new_scratch(3);
-            let mut three = vec![0.0f32; t * spf];
-            let mut j = 0;
-            while j < t {
-                let nf = 3.min(t - j);
-                dec.stream_steps(&latents[j * ld..(j + nf) * ld], &mut st3, &mut sc3, &mut three[j * spf..(j + nf) * spf]).unwrap();
-                j += nf;
-            }
-            assert_eq!(bits(&one), bits(&three), "half={half}: three frames per call");
-
-            for batch in [1usize, 2, 4, 7, 9] {
-                let off = dec.decode(&latents, batch).unwrap();
-                assert_eq!(bits(&one), bits(&off), "half={half}: offline batch {batch}");
+                dec.stream_step(&latents[j * ld..(j + 1) * ld], &mut st1, &mut sc1, &mut one[j * spf..(j + 1) * spf], &one_thread).unwrap();
             }
             assert!(one.iter().all(|v| v.is_finite()));
+
+            for pool in &pools {
+                for per_call in [1usize, 2, 3] {
+                    let mut st = dec.new_state();
+                    let mut sc = dec.new_scratch(per_call);
+                    let mut got = vec![0.0f32; t * spf];
+                    let mut j = 0;
+                    while j < t {
+                        let nf = per_call.min(t - j);
+                        dec.stream_steps(&latents[j * ld..(j + nf) * ld], &mut st, &mut sc, &mut got[j * spf..(j + nf) * spf], pool).unwrap();
+                        j += nf;
+                    }
+                    assert_eq!(bits(&one), bits(&got), "half={half} threads={} frames per call {per_call}", pool.threads());
+                }
+                for batch in [1usize, 2, 4, 7, 9] {
+                    let off = dec.decode(&latents, batch, pool).unwrap();
+                    assert_eq!(bits(&one), bits(&off), "half={half} threads={} offline batch {batch}", pool.threads());
+                }
+            }
         }
     }
 
     #[test]
     fn stream_steps_rejects_bad_sizes() {
         let dec = tiny_decoder(false);
+        let pool = ThreadPool::new(1);
         let ld = dec.config().latent_dim;
         let spf = dec.samples_per_frame();
         let mut st = dec.new_state();
         let mut sc = dec.new_scratch(2);
         let lat = vec![0.0f32; 3 * ld];
         let mut out = vec![0.0f32; 3 * spf];
-        assert!(dec.stream_steps(&lat, &mut st, &mut sc, &mut out).is_err(), "more frames than the scratch holds");
-        assert!(dec.stream_steps(&lat[..ld + 1], &mut st, &mut sc, &mut out[..spf]).is_err(), "partial frame");
-        assert!(dec.stream_steps(&lat[..2 * ld], &mut st, &mut sc, &mut out[..spf]).is_err(), "output too small");
-        assert!(dec.stream_steps(&lat[..2 * ld], &mut st, &mut sc, &mut out[..2 * spf]).is_ok());
+        assert!(dec.stream_steps(&lat, &mut st, &mut sc, &mut out, &pool).is_err(), "more frames than the scratch holds");
+        assert!(dec.stream_steps(&lat[..ld + 1], &mut st, &mut sc, &mut out[..spf], &pool).is_err(), "partial frame");
+        assert!(dec.stream_steps(&lat[..2 * ld], &mut st, &mut sc, &mut out[..spf], &pool).is_err(), "output too small");
+        assert!(dec.stream_steps(&lat[..2 * ld], &mut st, &mut sc, &mut out[..2 * spf], &pool).is_ok());
     }
 }

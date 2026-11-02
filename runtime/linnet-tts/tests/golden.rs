@@ -88,6 +88,7 @@ fn goldens() -> Vec<Golden> {
                 max_frames: meta["max_frames"].as_u64().unwrap() as usize,
                 eos_threshold: meta["eos_threshold"].as_f64().unwrap() as f32,
                 seed: meta["seed"].as_u64().unwrap(),
+                threads: 1,
             },
             n_steps,
             eos_fired: meta["eos_fired"].as_bool().unwrap(),
@@ -121,8 +122,12 @@ struct Run {
 
 /// Drive a session with the golden noise instead of the RNG.
 fn run_with_noise(model: &Linnet, voice: &VoiceLatents, g: &Golden) -> Run {
+    run_with_noise_params(model, voice, g, g.params)
+}
+
+fn run_with_noise_params(model: &Linnet, voice: &VoiceLatents, g: &Golden, params: SynthParams) -> Run {
     let ld = model.latent_dim();
-    let mut s = Session::new(model, voice, g.params).unwrap();
+    let mut s = Session::new(model, voice, params).unwrap();
     s.prime(&g.text).unwrap();
     let mut latents = Vec::new();
     let mut wav = Vec::new();
@@ -230,10 +235,11 @@ fn decoder_frame_batching_is_bit_exact() {
         let dec = model.decoder();
         let frames_per_step = model.latent_dim() / dec.config().latent_dim;
         assert_eq!(frames_per_step, 2);
+        let pool = linnet_tts::ThreadPool::new(1);
         let bits = |v: &[f32]| v.iter().map(|x| x.to_bits()).collect::<Vec<_>>();
         for g in goldens() {
-            let one = dec.decode(&g.latents, 1).unwrap();
-            let two = dec.decode(&g.latents, 2).unwrap();
+            let one = dec.decode(&g.latents, 1, &pool).unwrap();
+            let two = dec.decode(&g.latents, 2, &pool).unwrap();
             assert_eq!(bits(&one), bits(&two), "{}: {} frame batching changed the bytes", g.name, w.display());
             // Frame by frame through the streaming entry point as well.
             let ld = dec.config().latent_dim;
@@ -242,7 +248,7 @@ fn decoder_frame_batching_is_bit_exact() {
             let mut sc = dec.new_scratch(1);
             let mut streamed = vec![0.0f32; one.len()];
             for j in 0..g.latents.len() / ld {
-                dec.stream_step(&g.latents[j * ld..(j + 1) * ld], &mut st, &mut sc, &mut streamed[j * spf..(j + 1) * spf]).unwrap();
+                dec.stream_step(&g.latents[j * ld..(j + 1) * ld], &mut st, &mut sc, &mut streamed[j * spf..(j + 1) * spf], &pool).unwrap();
             }
             assert_eq!(bits(&one), bits(&streamed), "{}: streamed single frames", g.name);
             // Linnet::decode is the batched decode with the output delay applied.
@@ -250,6 +256,37 @@ fn decoder_frame_batching_is_bit_exact() {
             let delay = model.config().output_delay;
             assert_eq!(bits(&delayed[..one.len() - delay]), bits(&one[delay..]), "{}: output delay", g.name);
             assert!(delayed[one.len() - delay..].iter().all(|v| *v == 0.0));
+        }
+    }
+}
+
+/// The thread count must not change a single bit of the latents, the
+/// streamed audio or the offline decode, for either weight precision.
+#[test]
+fn thread_count_does_not_change_the_output() {
+    let (Some(t), Some(v)) = (tokenizer(), voice()) else { return };
+    let voice = VoiceLatents::load(v).unwrap();
+    let bits = |v: &[f32]| v.iter().map(|x| x.to_bits()).collect::<Vec<_>>();
+    for w in [weights(), weights_fp16()].into_iter().flatten() {
+        let model = Linnet::load(&w, &t).unwrap();
+        for g in goldens() {
+            let one = run_with_noise_params(&model, &voice, &g, SynthParams { threads: 1, ..g.params });
+            assert_eq!(model.threads(), 1);
+            let dec_one = model.decode(&g.latents).unwrap();
+            for threads in [2usize, 3, 4, 8] {
+                let r = run_with_noise_params(&model, &voice, &g, SynthParams { threads, ..g.params });
+                assert_eq!(model.threads(), threads);
+                assert_eq!(r.n_steps, one.n_steps, "{}: threads {threads} step count", g.name);
+                assert_eq!(bits(&r.latents), bits(&one.latents), "{}: threads {threads} latents", g.name);
+                assert_eq!(bits(&r.wav), bits(&one.wav), "{}: threads {threads} wav ({})", g.name, w.display());
+                let dec = model.decode(&g.latents).unwrap();
+                assert_eq!(bits(&dec), bits(&dec_one), "{}: threads {threads} decode", g.name);
+            }
+            // Automatic selection and an explicit setter on the model.
+            model.set_threads(0);
+            assert!((1..=4).contains(&model.threads()));
+            let dec = model.decode(&g.latents).unwrap();
+            assert_eq!(bits(&dec), bits(&dec_one), "{}: auto threads decode", g.name);
         }
     }
 }

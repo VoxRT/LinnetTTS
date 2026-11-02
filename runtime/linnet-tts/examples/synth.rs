@@ -1,7 +1,9 @@
 //! Command-line synthesis with timing report.
 //!
 //! ```text
-//! cargo run --release --example synth -- <weights.safetensors> <tokenizer.model> <voice.npy> "text" [out.wav] [temp] [cfg] [seed]
+//! cargo run --release --example synth -- <weights.safetensors> <tokenizer.model> <voice.npy> "text" [out.wav] [temp] [cfg] [seed] [threads]
+//!
+//! `threads`: 1 = single-threaded, 0 (default) = automatic.
 //! ```
 
 use std::io::Write;
@@ -35,7 +37,7 @@ fn write_wav(path: &str, pcm: &[f32], rate: u32) -> std::io::Result<()> {
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 5 {
-        eprintln!("usage: synth <weights> <tokenizer.model> <voice.npy> \"text\" [out.wav] [temp] [cfg] [seed]");
+        eprintln!("usage: synth <weights> <tokenizer.model> <voice.npy> \"text\" [out.wav] [temp] [cfg] [seed] [threads]");
         std::process::exit(2);
     }
     let t0 = Instant::now();
@@ -57,6 +59,9 @@ fn main() {
     }
     if let Some(s) = args.get(8) {
         params.seed = s.parse().expect("seed");
+    }
+    if let Some(t) = args.get(9) {
+        params.threads = t.parse().expect("threads");
     }
 
     let mut session = Session::new(&model, &voice, params).expect("session");
@@ -91,6 +96,7 @@ fn main() {
     let max_step = step_ms.iter().cloned().fold(0.0, f64::max);
 
     println!("tokens: {:?}", model.tokenize(&args[4]));
+    println!("threads: {} (requested {})", model.threads(), params.threads);
     println!("load {load_ms:.1} ms, prime {prime_ms:.2} ms, first audio {:.2} ms", first_audio_ms.unwrap_or(0.0));
     println!(
         "{} steps, {:.3} s audio, synthesis {total_ms:.1} ms, RTF {:.2} %",

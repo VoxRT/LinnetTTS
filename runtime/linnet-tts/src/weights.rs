@@ -11,7 +11,48 @@ use linnet_ops::ops;
 
 use crate::config::{DecoderConfig, LmConfig};
 use crate::error::Result;
+use crate::pool::{SendPtr, ThreadPool};
 use crate::safetensors::{DType, SafeTensors};
+
+/// Element-wise activation applied right after a matrix product (and its
+/// bias) inside [`Mat::gemm_par`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Act {
+    None,
+    /// erf-GELU (decoder ConvNeXt blocks).
+    Gelu,
+    /// tanh-GELU (trunk feed-forward).
+    GeluTanh,
+    /// SiLU (flow head).
+    Silu,
+}
+
+/// Bias and activation of one output row (or a 32-aligned piece of it).
+/// Applying this piecewise is bit-equal to applying it to the whole row:
+/// the SIMD activation kernels only depend on an element's position
+/// through the vector/scalar-tail split, and chunk boundaries that are
+/// multiples of 32 keep that split unchanged.
+#[inline]
+fn epilogue(row: &mut [f32], bias: Option<&[f32]>, act: Act) {
+    if let Some(b) = bias {
+        ops::add_inplace(row, b);
+    }
+    match act {
+        Act::None => {}
+        Act::Gelu => ops::gelu_inplace(row),
+        Act::GeluTanh => ops::gelu_tanh_inplace(row),
+        Act::Silu => ops::silu_inplace(row),
+    }
+}
+
+/// Products smaller than this run on the calling thread.
+const PAR_MIN_MACS: usize = 32 * 1024;
+/// Output rows per chunk when a product is split over the weight rows.
+const OUT_CHUNK: usize = 32;
+/// Activation rows per chunk when a product is split over the inputs.
+const ROW_BLOCK: usize = 4;
+/// Up to this many activation rows the split is over weight rows.
+const SMALL_M: usize = 8;
 
 /// A dense `[rows × cols]` weight matrix in its storage dtype.
 pub enum Mat {
@@ -55,6 +96,94 @@ impl Mat {
             Mat::F32 { w, rows, cols } => ops::matmul_mm_transposed_b(a, w, m, *cols, *rows, out),
             Mat::F16 { w, rows, cols } => ops::matmul_mm_f16(a, w, m, *cols, *rows, out),
         }
+    }
+
+    /// `out[m × (j1 − j0)] = a[m × cols] · W[j0..j1]ᵀ`: the product
+    /// restricted to weight rows `j0..j1`, same kernels as [`Mat::gemm`].
+    fn gemm_rows(&self, j0: usize, j1: usize, a: &[f32], m: usize, out: &mut [f32]) {
+        let k = self.cols();
+        let n = j1 - j0;
+        match self {
+            Mat::F32 { w, .. } => {
+                let w = &w[j0 * k..j1 * k];
+                if m == 1 {
+                    ops::matmul_mv(a, w, k, n, out)
+                } else {
+                    ops::matmul_mm_transposed_b(a, w, m, k, n, out)
+                }
+            }
+            Mat::F16 { w, .. } => {
+                let w = &w[j0 * k..j1 * k];
+                if m == 1 {
+                    ops::matmul_mv_f16(a, w, k, n, out)
+                } else {
+                    ops::matmul_mm_f16(a, w, m, k, n, out)
+                }
+            }
+        }
+    }
+
+    /// [`Mat::gemm`] followed by an optional per-row `bias` and `act`,
+    /// spread over the pool. Bit-equal to the single-threaded sequence
+    /// (`gemm`, then `add_inplace(row, bias)` and the activation per row)
+    /// for any thread count: each output value is one dot product done by
+    /// one thread, and the epilogue is per row (see [`epilogue`]).
+    ///
+    /// Split: up to [`SMALL_M`] activation rows (the per-step shapes) over
+    /// the weight rows in chunks of [`OUT_CHUNK`], so the weights are
+    /// streamed once in total and each chunk writes its own columns of
+    /// every output row; more rows (prefill) over the activation rows in
+    /// blocks of [`ROW_BLOCK`], which keeps the kernels' four-row blocking.
+    pub fn gemm_par(&self, pool: &ThreadPool, a: &[f32], m: usize, out: &mut [f32], bias: Option<&[f32]>, act: Act) {
+        let (k, n) = (self.cols(), self.rows());
+        debug_assert_eq!(a.len(), m * k);
+        debug_assert_eq!(out.len(), m * n);
+        debug_assert!(bias.is_none_or(|b| b.len() == n));
+        if pool.threads() == 1 || m * k * n < PAR_MIN_MACS {
+            self.gemm(a, m, out);
+            for r in 0..m {
+                epilogue(&mut out[r * n..(r + 1) * n], bias, act);
+            }
+            return;
+        }
+        let op = SendPtr::new(out);
+        if m > SMALL_M {
+            let blocks = m.div_ceil(ROW_BLOCK);
+            pool.run(blocks, &|b| {
+                let i0 = b * ROW_BLOCK;
+                let i1 = (i0 + ROW_BLOCK).min(m);
+                // SAFETY: block b owns output rows i0..i1.
+                let o = unsafe { op.slice(i0 * n, (i1 - i0) * n) };
+                self.gemm(&a[i0 * k..i1 * k], i1 - i0, o);
+                for r in 0..i1 - i0 {
+                    epilogue(&mut o[r * n..(r + 1) * n], bias, act);
+                }
+            });
+            return;
+        }
+        let chunks = n.div_ceil(OUT_CHUNK);
+        pool.run(chunks, &|c| {
+            let j0 = c * OUT_CHUNK;
+            let j1 = (j0 + OUT_CHUNK).min(n);
+            let w = j1 - j0;
+            let b = bias.map(|b| &b[j0..j1]);
+            if m == 1 {
+                // SAFETY: chunk c owns out[j0..j1].
+                let o = unsafe { op.slice(j0, w) };
+                self.gemm_rows(j0, j1, a, 1, o);
+                epilogue(o, b, act);
+            } else {
+                let mut tmp = [0.0f32; SMALL_M * OUT_CHUNK];
+                let t = &mut tmp[..m * w];
+                self.gemm_rows(j0, j1, a, m, t);
+                for r in 0..m {
+                    // SAFETY: chunk c owns columns j0..j1 of every output row.
+                    let o = unsafe { op.slice(r * n + j0, w) };
+                    o.copy_from_slice(&t[r * w..(r + 1) * w]);
+                    epilogue(o, b, act);
+                }
+            }
+        });
     }
 
     /// Copy row `r` into `out` as f32 (embedding lookup).

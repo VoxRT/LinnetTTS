@@ -8,12 +8,15 @@
 //! samples and the session ends with `output_delay` zeros, so that the
 //! concatenated chunks equal the offline decode of the same latents.
 
+use std::sync::{Arc, Mutex};
+
 use linnet_ops::Xoshiro256StarStar;
 
 use crate::config::ModelConfig;
 use crate::decoder::{DecoderScratch, DecoderState, VocosDecoder};
 use crate::error::{Error, Result};
 use crate::lm::{FlowLm, LmScratch, TrunkState};
+use crate::pool::{auto_threads, ThreadPool};
 use crate::safetensors::SafeTensors;
 use crate::tokenizer::Tokenizer;
 use crate::voice::VoiceLatents;
@@ -32,6 +35,12 @@ pub struct SynthParams {
     pub eos_threshold: f32,
     /// Seed of the noise generator.
     pub seed: u64,
+    /// Threads used by the model's pool while this session runs: `1` =
+    /// single-threaded, `0` = automatic (the fast cores, at most 4; see
+    /// [`crate::auto_threads`]). Creating a session applies the value to
+    /// the model ([`Linnet::set_threads`]). The output never depends on
+    /// it.
+    pub threads: usize,
 }
 
 impl Default for SynthParams {
@@ -42,6 +51,7 @@ impl Default for SynthParams {
             max_frames: 300,
             eos_threshold: -1.0,
             seed: 0,
+            threads: 0,
         }
     }
 }
@@ -53,6 +63,10 @@ pub struct Linnet {
     lm: FlowLm,
     decoder: VocosDecoder,
     tokenizer: Tokenizer,
+    /// One persistent pool per model; replaced by [`Linnet::set_threads`].
+    /// Sessions take an `Arc` per call, so a replaced pool finishes the
+    /// step it is in before its workers are joined.
+    pool: Mutex<Arc<ThreadPool>>,
 }
 
 impl Linnet {
@@ -90,7 +104,30 @@ impl Linnet {
             lm,
             decoder: dec,
             tokenizer,
+            pool: Mutex::new(Arc::new(ThreadPool::new(auto_threads()))),
         })
+    }
+
+    /// The pool a step runs on.
+    pub(crate) fn pool(&self) -> Arc<ThreadPool> {
+        Arc::clone(&self.pool.lock().unwrap_or_else(|e| e.into_inner()))
+    }
+
+    /// Threads the model currently uses (1 = single-threaded).
+    pub fn threads(&self) -> usize {
+        self.pool().threads()
+    }
+
+    /// Use `threads` threads from now on: `1` single-threaded (no pool, no
+    /// synchronisation), `0` automatic ([`auto_threads`]), larger values
+    /// capped at [`crate::pool::MAX_THREADS`]. Results are identical for
+    /// every value. A no-op when the count does not change.
+    pub fn set_threads(&self, threads: usize) {
+        let want = if threads == 0 { auto_threads() } else { threads };
+        let mut slot = self.pool.lock().unwrap_or_else(|e| e.into_inner());
+        if slot.threads() != want.clamp(1, crate::pool::MAX_THREADS) {
+            *slot = Arc::new(ThreadPool::new(want));
+        }
     }
 
     pub fn config(&self) -> &ModelConfig {
@@ -135,7 +172,8 @@ impl Linnet {
             return Ok(Vec::new());
         }
         let frames_per_step = self.cfg.lm.latent_dim / self.cfg.decoder.latent_dim;
-        let mut wav = self.decoder.decode(latents, frames_per_step)?;
+        let pool = self.pool();
+        let mut wav = self.decoder.decode(latents, frames_per_step, &pool)?;
         let delay = self.cfg.output_delay.min(wav.len());
         wav.drain(..delay);
         wav.resize(wav.len() + delay, 0.0);
@@ -200,6 +238,7 @@ impl<'m> Session<'m> {
         if !params.cfg.is_finite() {
             return Err(Error::Invalid("cfg must be finite".into()));
         }
+        model.set_threads(params.threads);
         let n_streams = if params.cfg == 1.0 { 1 } else { 2 };
         let cap = 2 + voice.frames() + params.max_frames + 2;
         let states = (0..n_streams).map(|_| model.lm.new_state(cap)).collect();
@@ -264,17 +303,18 @@ impl<'m> Session<'m> {
         self.finished = false;
         self.tail_pending = false;
 
+        let pool = self.model.pool();
         let mut rows = std::mem::take(&mut self.prefix_rows);
         rows.clear();
         rows.resize(prefix_len * d, 0.0);
         lm.build_prefix(tokens, &self.voice, &mut rows)?;
-        lm.prefill(&mut rows, prefix_len, &mut self.states[0], &mut self.sc)?;
+        lm.prefill(&mut rows, prefix_len, &mut self.states[0], &mut self.sc, &pool)?;
         lm.out_norm(&rows[(prefix_len - 1) * d..], &mut self.z_rows[..d]);
         if self.n_streams == 2 {
             rows.clear();
             rows.resize(2 * d, 0.0);
             lm.build_null_prefix(&mut rows);
-            lm.prefill(&mut rows, 2, &mut self.states[1], &mut self.sc)?;
+            lm.prefill(&mut rows, 2, &mut self.states[1], &mut self.sc, &pool)?;
             lm.out_norm(&rows[d..], &mut self.z_rows[d..]);
         }
         self.prefix_rows = rows;
@@ -346,8 +386,9 @@ impl<'m> Session<'m> {
             return Some(&self.out[..delay]);
         }
 
+        let pool = model.pool();
         // Sample, then decide whether this step is the end.
-        lm.flow_sample(&self.z, &self.x0, &mut self.sc, &mut self.latent_norm);
+        lm.flow_sample(&self.z, &self.x0, &mut self.sc, &mut self.latent_norm, &pool);
         if lm.eos_logit(&self.z) > self.params.eos_threshold {
             return self.end();
         }
@@ -356,7 +397,7 @@ impl<'m> Session<'m> {
         // are streamed once; the output is the same as frame by frame.
         model
             .decoder
-            .stream_steps(&self.latent_codec, &mut self.dec_state, &mut self.dec_sc, &mut self.chunk)
+            .stream_steps(&self.latent_codec, &mut self.dec_state, &mut self.dec_sc, &mut self.chunk, &pool)
             .expect("decoder buffers are sized at construction");
         self.frames += 1;
 
@@ -365,7 +406,7 @@ impl<'m> Session<'m> {
             for r in 0..self.n_streams {
                 lm.latent_feedback(&self.latent_norm, &mut self.xs[r * d..(r + 1) * d]);
             }
-            lm.step(&mut self.xs, &mut self.states, &mut self.sc).expect("KV cache sized for max_frames");
+            lm.step(&mut self.xs, &mut self.states, &mut self.sc, &pool).expect("KV cache sized for max_frames");
             for r in 0..self.n_streams {
                 lm.out_norm(&self.xs[r * d..(r + 1) * d], &mut self.z_rows[r * d..(r + 1) * d]);
             }
