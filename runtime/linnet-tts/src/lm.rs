@@ -74,7 +74,34 @@ impl TrunkState {
     }
 }
 
-/// Reusable buffers for `step` (up to `m_max` streams) and the head.
+/// Buffers of `prefill`, sized for the longest prefix seen so far. They
+/// grow (allocate) only when a longer prefix arrives, so re-priming a
+/// session with a prefix no longer than the first one allocates nothing.
+#[derive(Default)]
+struct PrefillBufs {
+    sines: Vec<f32>,
+    coses: Vec<f32>,
+    h_rows: Vec<f32>,
+    q_rows: Vec<f32>,
+    qkv_rows: Vec<f32>,
+    scores: Vec<f32>,
+    q_head: Vec<f32>,
+    out_head: Vec<f32>,
+    tmp_rows: Vec<f32>,
+    ff_rows: Vec<f32>,
+}
+
+/// Make `v` at least `n` long (values are overwritten before use).
+#[inline]
+fn ensure_len(v: &mut Vec<f32>, n: usize) -> &mut [f32] {
+    if v.len() < n {
+        v.resize(n, 0.0);
+    }
+    &mut v[..n]
+}
+
+/// Reusable buffers for `step` (up to `m_max` streams), the head and
+/// `prefill`. Nothing in the per-step path allocates.
 pub struct LmScratch {
     m_max: usize,
     h: Vec<f32>,
@@ -92,6 +119,7 @@ pub struct LmScratch {
     fh2: Vec<f32>,
     mod3: Vec<f32>,
     mod2: Vec<f32>,
+    pf: PrefillBufs,
 }
 
 impl LmScratch {
@@ -115,6 +143,7 @@ impl LmScratch {
             fh2: vec![0.0; h],
             mod3: vec![0.0; 3 * h],
             mod2: vec![0.0; 2 * h],
+            pf: PrefillBufs::default(),
         }
     }
 
@@ -212,8 +241,9 @@ impl FlowLm {
     }
 
     /// Run the trunk over `t` rows (`rows` is `t × d`, overwritten with
-    /// the hidden states before the final norm) and append to `st`.
-    pub fn prefill(&self, rows: &mut [f32], t: usize, st: &mut TrunkState) -> Result<()> {
+    /// the hidden states before the final norm) and append to `st`. The
+    /// working buffers live in `sc` and grow only for a longer prefix.
+    pub fn prefill(&self, rows: &mut [f32], t: usize, st: &mut TrunkState, sc: &mut LmScratch) -> Result<()> {
         let d = self.cfg.d_model;
         let nh = self.cfg.n_heads;
         let hw = self.cfg.head_width();
@@ -228,19 +258,20 @@ impl FlowLm {
         }
         let scale = 1.0 / (hw as f32).sqrt();
 
-        let mut sines = vec![0.0f32; t * half];
-        let mut coses = vec![0.0f32; t * half];
+        let pf = &mut sc.pf;
+        let sines = ensure_len(&mut pf.sines, t * half);
+        let coses = ensure_len(&mut pf.coses, t * half);
         for r in 0..t {
             self.rope.tables(n0 + r, &mut sines[r * half..(r + 1) * half], &mut coses[r * half..(r + 1) * half]);
         }
-        let mut h_rows = vec![0.0f32; t * d];
-        let mut q_rows = vec![0.0f32; t * d];
-        let mut qkv_rows = vec![0.0f32; t * 3 * d];
-        let mut scores = vec![0.0f32; t * n];
-        let mut q_head = vec![0.0f32; t * hw];
-        let mut out_head = vec![0.0f32; t * hw];
-        let mut tmp_rows = vec![0.0f32; t * d];
-        let mut ff_rows = vec![0.0f32; t * self.cfg.d_ff()];
+        let h_rows = ensure_len(&mut pf.h_rows, t * d);
+        let q_rows = ensure_len(&mut pf.q_rows, t * d);
+        let qkv_rows = ensure_len(&mut pf.qkv_rows, t * 3 * d);
+        let scores = ensure_len(&mut pf.scores, t * n);
+        let q_head = ensure_len(&mut pf.q_head, t * hw);
+        let out_head = ensure_len(&mut pf.out_head, t * hw);
+        let tmp_rows = ensure_len(&mut pf.tmp_rows, t * d);
+        let ff_rows = ensure_len(&mut pf.ff_rows, t * self.cfg.d_ff());
 
         for (lw, kv) in self.w.layers.iter().zip(st.layers.iter_mut()) {
             for r in 0..t {
@@ -254,7 +285,7 @@ impl FlowLm {
                     &mut h_rows[r * d..(r + 1) * d],
                 );
             }
-            lw.qkv.gemm(&h_rows, t, &mut qkv_rows);
+            lw.qkv.gemm(h_rows, t, qkv_rows);
             for r in 0..t {
                 let (q, rest) = qkv_rows[r * 3 * d..(r + 1) * 3 * d].split_at_mut(d);
                 let (k_new, v_new) = rest.split_at_mut(d);
@@ -275,7 +306,7 @@ impl FlowLm {
                     q_head[r * hw..(r + 1) * hw].copy_from_slice(&q_rows[r * d + hh * hw..r * d + (hh + 1) * hw]);
                 }
                 let k_mat = &kv.k[hh * st.cap * hw..hh * st.cap * hw + n * hw];
-                ops::matmul_mm_transposed_b(&q_head, k_mat, t, hw, n, &mut scores);
+                ops::matmul_mm_transposed_b(q_head, k_mat, t, hw, n, scores);
                 for r in 0..t {
                     let row = &mut scores[r * n..(r + 1) * n];
                     for s in row.iter_mut() {
@@ -288,13 +319,13 @@ impl FlowLm {
                     row[valid..].fill(0.0);
                 }
                 let v_mat = &kv.v[hh * st.cap * hw..hh * st.cap * hw + n * hw];
-                ops::matmul_mm(&scores, v_mat, t, n, hw, &mut out_head);
+                ops::matmul_mm(scores, v_mat, t, n, hw, out_head);
                 for r in 0..t {
                     h_rows[r * d + hh * hw..r * d + (hh + 1) * hw].copy_from_slice(&out_head[r * hw..(r + 1) * hw]);
                 }
             }
-            lw.out.gemm(&h_rows, t, &mut tmp_rows);
-            ops::add_inplace(rows, &tmp_rows);
+            lw.out.gemm(h_rows, t, tmp_rows);
+            ops::add_inplace(rows, tmp_rows);
             for r in 0..t {
                 ops::layer_norm(
                     &rows[r * d..(r + 1) * d],
@@ -306,10 +337,10 @@ impl FlowLm {
                     &mut h_rows[r * d..(r + 1) * d],
                 );
             }
-            lw.ff_in.gemm(&h_rows, t, &mut ff_rows);
-            ops::gelu_tanh_inplace(&mut ff_rows);
-            lw.ff_out.gemm(&ff_rows, t, &mut tmp_rows);
-            ops::add_inplace(rows, &tmp_rows);
+            lw.ff_in.gemm(h_rows, t, ff_rows);
+            ops::gelu_tanh_inplace(ff_rows);
+            lw.ff_out.gemm(ff_rows, t, tmp_rows);
+            ops::add_inplace(rows, tmp_rows);
         }
         st.pos = n;
         Ok(())

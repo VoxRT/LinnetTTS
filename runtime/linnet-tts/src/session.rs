@@ -173,6 +173,8 @@ pub struct Session<'m> {
     xs: Vec<f32>,
     chunk: Vec<f32>,
     out: Vec<f32>,
+    /// Prefix rows of `prime`; kept so re-priming does not allocate.
+    prefix_rows: Vec<f32>,
     skip: usize,
     frames: usize,
     primed: bool,
@@ -221,6 +223,7 @@ impl<'m> Session<'m> {
             xs: vec![0.0; n_streams * d],
             chunk: vec![0.0; sps],
             out: vec![0.0; sps],
+            prefix_rows: Vec::new(),
             skip: 0,
             frames: 0,
             primed: false,
@@ -261,16 +264,20 @@ impl<'m> Session<'m> {
         self.finished = false;
         self.tail_pending = false;
 
-        let mut rows = vec![0.0f32; prefix_len * d];
+        let mut rows = std::mem::take(&mut self.prefix_rows);
+        rows.clear();
+        rows.resize(prefix_len * d, 0.0);
         lm.build_prefix(tokens, &self.voice, &mut rows)?;
-        lm.prefill(&mut rows, prefix_len, &mut self.states[0])?;
+        lm.prefill(&mut rows, prefix_len, &mut self.states[0], &mut self.sc)?;
         lm.out_norm(&rows[(prefix_len - 1) * d..], &mut self.z_rows[..d]);
         if self.n_streams == 2 {
-            let mut null_rows = vec![0.0f32; 2 * d];
-            lm.build_null_prefix(&mut null_rows);
-            lm.prefill(&mut null_rows, 2, &mut self.states[1])?;
-            lm.out_norm(&null_rows[d..], &mut self.z_rows[d..]);
+            rows.clear();
+            rows.resize(2 * d, 0.0);
+            lm.build_null_prefix(&mut rows);
+            lm.prefill(&mut rows, 2, &mut self.states[1], &mut self.sc)?;
+            lm.out_norm(&rows[d..], &mut self.z_rows[d..]);
         }
+        self.prefix_rows = rows;
         self.mix_z();
         self.primed = true;
         Ok(())
