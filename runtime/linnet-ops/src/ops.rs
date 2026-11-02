@@ -421,6 +421,14 @@ pub fn matmul_mv_f16_scalar(
 /// every dispatch path (same accumulator count, chunking and
 /// reduction), so the result is **bit-equal** to `m` row-wise GEMV
 /// calls on the same path.
+///
+/// Dispatch: on aarch64 the NEON kernel is register-blocked over
+/// activation rows (blocks of 4, 2, 1) and converts each fp16 weight
+/// row in register exactly once per block — no scratch panel, no
+/// allocation, used on every step. On x86_64 the AVX2 + F16C kernel
+/// dequantises a panel of weight rows into an f32 scratch buffer first
+/// (faster there, where the row block stays in the wider register
+/// file). wasm32 runs the scalar reference.
 pub fn matmul_mm_f16(a: &[f32], weight: &[u16], m: usize, k: usize, n: usize, out: &mut [f32]) {
     debug_assert_eq!(a.len(), m * k);
     debug_assert_eq!(weight.len(), n * k);

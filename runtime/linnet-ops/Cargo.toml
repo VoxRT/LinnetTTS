@@ -6,6 +6,7 @@ license.workspace = true
 repository.workspace = true
 description = "Numeric kernels for the LinnetTTS runtime: scalar reference implementations with aarch64 NEON, x86_64 AVX2+FMA and WASM SIMD128 fast paths"
 rust-version = "1.85"
+build = "build.rs"
 
 [dependencies]
 

@@ -593,25 +593,209 @@ pub fn softmax_row_inplace_neon(scores: &mut [f32], rows: usize, cols: usize) {
 }
 
 // ───────── fp16-resident matrix products ─────────
+//
+// Weights are binary16 in memory and widened to f32 in registers with
+// `FCVTL` / `FCVTL2` (ARMv8.0-A base NEON: one instruction per four
+// lanes, exact, IEEE semantics for subnormals, ±inf and NaN — the same
+// mapping as `crate::f16::f16_to_f32`). The intrinsics for these
+// instructions (`vcvt_f32_f16`, `vcvt_high_f32_f16`) are stable since
+// Rust 1.94; the build script sets `linnet_f16_intrinsics` on such
+// compilers. Older toolchains get the same instructions as inline
+// assembly, which the optimiser schedules less well (about 10 % slower
+// on Cortex-A73) but which is bit-identical.
+//
+// Every dot product below has the same accumulator structure: four
+// `float32x4_t` accumulators over 16-wide k chunks, reduced as
+// `vaddvq((a0 + a1) + (a2 + a3))`, then a sequential scalar tail over
+// the k % 16 remainder. The multi-row cores run that exact structure for
+// 2 or 4 activation rows side by side while streaming each weight row
+// once, so their outputs are bit-equal to the single-row GEMV.
 
-/// Half → float conversion of 4 lanes via the "magic multiply": place
-/// the fp16 exponent + mantissa bits into the f32 field positions and
-/// multiply by 2^112 to re-bias. Exact for normals and subnormals (the
-/// multiply performs the denormal shift); ±inf / NaN are not mapped,
-/// which is fine because model weights never contain them.
+/// Lanes 0..4 of eight binary16 values → f32 (`FCVTL`).
+// Only compiled when the build script found a compiler on which these
+// intrinsics are stable, so the MSRV lint does not apply.
+#[cfg(linnet_f16_intrinsics)]
+#[allow(clippy::incompatible_msrv)]
 #[inline(always)]
-unsafe fn f16x4_to_f32x4(h: uint16x4_t) -> float32x4_t {
-    let ext = vshll_n_u16(h, 0); // widen u16 → u32
-    let sign = vshlq_n_u32(vandq_u32(ext, vdupq_n_u32(0x8000)), 16);
-    let em = vshlq_n_u32(vandq_u32(ext, vdupq_n_u32(0x7FFF)), 13);
-    let magic = vdupq_n_f32(f32::from_bits(0x7780_0000)); // 2^112
-    let val = vmulq_f32(vreinterpretq_f32_u32(em), magic);
-    vreinterpretq_f32_u32(vorrq_u32(vreinterpretq_u32_f32(val), sign))
+unsafe fn f16x8_lo_to_f32x4(h: uint16x8_t) -> float32x4_t {
+    vcvt_f32_f16(vreinterpret_f16_u16(vget_low_u16(h)))
 }
 
-/// fp16-resident GEMV: fp32 accumulation, 4 accumulators over 16-wide
-/// chunks, scalar tail — same skeleton as [`matmul_mv_neon`] with the
-/// weights dequantised in-register.
+/// Lanes 4..8 of eight binary16 values → f32 (`FCVTL2`).
+#[cfg(linnet_f16_intrinsics)]
+#[allow(clippy::incompatible_msrv)]
+#[inline(always)]
+unsafe fn f16x8_hi_to_f32x4(h: uint16x8_t) -> float32x4_t {
+    vcvt_high_f32_f16(vreinterpretq_f16_u16(h))
+}
+
+/// Lanes 0..4 of eight binary16 values → f32 (`FCVTL`).
+#[cfg(not(linnet_f16_intrinsics))]
+#[inline(always)]
+unsafe fn f16x8_lo_to_f32x4(h: uint16x8_t) -> float32x4_t {
+    let out: float32x4_t;
+    core::arch::asm!(
+        "fcvtl {o:v}.4s, {i:v}.4h",
+        o = lateout(vreg) out,
+        i = in(vreg) h,
+        options(pure, nomem, nostack, preserves_flags)
+    );
+    out
+}
+
+/// Lanes 4..8 of eight binary16 values → f32 (`FCVTL2`).
+#[cfg(not(linnet_f16_intrinsics))]
+#[inline(always)]
+unsafe fn f16x8_hi_to_f32x4(h: uint16x8_t) -> float32x4_t {
+    let out: float32x4_t;
+    core::arch::asm!(
+        "fcvtl2 {o:v}.4s, {i:v}.8h",
+        o = lateout(vreg) out,
+        i = in(vreg) h,
+        options(pure, nomem, nostack, preserves_flags)
+    );
+    out
+}
+
+/// Sixteen binary16 weights at `w` → four f32 vectors (two 128-bit
+/// loads, two `FCVTL`, two `FCVTL2`).
+#[inline(always)]
+unsafe fn load_w16(w: *const u16) -> [float32x4_t; 4] {
+    let h0 = vld1q_u16(w);
+    let h1 = vld1q_u16(w.add(8));
+    [
+        f16x8_lo_to_f32x4(h0),
+        f16x8_hi_to_f32x4(h0),
+        f16x8_lo_to_f32x4(h1),
+        f16x8_hi_to_f32x4(h1),
+    ]
+}
+
+/// `vaddvq((a0 + a1) + (a2 + a3))` — the reduction every fp16 dot uses.
+#[inline(always)]
+unsafe fn reduce4(a: [float32x4_t; 4]) -> f32 {
+    vaddvq_f32(vaddq_f32(vaddq_f32(a[0], a[1]), vaddq_f32(a[2], a[3])))
+}
+
+/// One activation row against one fp16 weight row of length `k`.
+///
+/// # Safety
+/// `x` must be readable for `k` f32 and `w` for `k` u16.
+#[inline(always)]
+unsafe fn dot_f16_1(x: *const f32, w: *const u16, k: usize) -> f32 {
+    let chunks16 = k / 16;
+    let mut acc = [vdupq_n_f32(0.0); 4];
+    // Two 16-wide chunks per iteration (same accumulators, same order
+    // as one chunk at a time) so the loads and conversions of the second
+    // chunk overlap the FMA latency of the first.
+    let pairs = chunks16 / 2;
+    for c in 0..pairs {
+        let b = c * 32;
+        let wv = load_w16(w.add(b));
+        let wu = load_w16(w.add(b + 16));
+        acc[0] = vfmaq_f32(acc[0], vld1q_f32(x.add(b)), wv[0]);
+        acc[1] = vfmaq_f32(acc[1], vld1q_f32(x.add(b + 4)), wv[1]);
+        acc[2] = vfmaq_f32(acc[2], vld1q_f32(x.add(b + 8)), wv[2]);
+        acc[3] = vfmaq_f32(acc[3], vld1q_f32(x.add(b + 12)), wv[3]);
+        acc[0] = vfmaq_f32(acc[0], vld1q_f32(x.add(b + 16)), wu[0]);
+        acc[1] = vfmaq_f32(acc[1], vld1q_f32(x.add(b + 20)), wu[1]);
+        acc[2] = vfmaq_f32(acc[2], vld1q_f32(x.add(b + 24)), wu[2]);
+        acc[3] = vfmaq_f32(acc[3], vld1q_f32(x.add(b + 28)), wu[3]);
+    }
+    for c in pairs * 2..chunks16 {
+        let b = c * 16;
+        let wv = load_w16(w.add(b));
+        acc[0] = vfmaq_f32(acc[0], vld1q_f32(x.add(b)), wv[0]);
+        acc[1] = vfmaq_f32(acc[1], vld1q_f32(x.add(b + 4)), wv[1]);
+        acc[2] = vfmaq_f32(acc[2], vld1q_f32(x.add(b + 8)), wv[2]);
+        acc[3] = vfmaq_f32(acc[3], vld1q_f32(x.add(b + 12)), wv[3]);
+    }
+    let mut s = reduce4(acc);
+    for i in chunks16 * 16..k {
+        s += crate::f16::f16_to_f32(*w.add(i)) * *x.add(i);
+    }
+    s
+}
+
+/// Two activation rows against one fp16 weight row; the weights are
+/// converted once and feed eight accumulators. Each row's result is
+/// bit-equal to [`dot_f16_1`] on that row.
+///
+/// # Safety
+/// `x0`, `x1` must be readable for `k` f32 each and `w` for `k` u16.
+#[inline(always)]
+unsafe fn dot_f16_2(x0: *const f32, x1: *const f32, w: *const u16, k: usize) -> [f32; 2] {
+    let chunks16 = k / 16;
+    let mut a = [vdupq_n_f32(0.0); 4];
+    let mut b = [vdupq_n_f32(0.0); 4];
+    for c in 0..chunks16 {
+        let o = c * 16;
+        let wv = load_w16(w.add(o));
+        a[0] = vfmaq_f32(a[0], vld1q_f32(x0.add(o)), wv[0]);
+        a[1] = vfmaq_f32(a[1], vld1q_f32(x0.add(o + 4)), wv[1]);
+        a[2] = vfmaq_f32(a[2], vld1q_f32(x0.add(o + 8)), wv[2]);
+        a[3] = vfmaq_f32(a[3], vld1q_f32(x0.add(o + 12)), wv[3]);
+        b[0] = vfmaq_f32(b[0], vld1q_f32(x1.add(o)), wv[0]);
+        b[1] = vfmaq_f32(b[1], vld1q_f32(x1.add(o + 4)), wv[1]);
+        b[2] = vfmaq_f32(b[2], vld1q_f32(x1.add(o + 8)), wv[2]);
+        b[3] = vfmaq_f32(b[3], vld1q_f32(x1.add(o + 12)), wv[3]);
+    }
+    let mut s = [reduce4(a), reduce4(b)];
+    for i in chunks16 * 16..k {
+        let wf = crate::f16::f16_to_f32(*w.add(i));
+        s[0] += wf * *x0.add(i);
+        s[1] += wf * *x1.add(i);
+    }
+    s
+}
+
+/// Four activation rows against one fp16 weight row; sixteen
+/// accumulators, weights converted once. Bit-equal per row to
+/// [`dot_f16_1`].
+///
+/// # Safety
+/// Each of the four `x` pointers must be readable for `k` f32 and `w`
+/// for `k` u16.
+#[inline(always)]
+unsafe fn dot_f16_4(x: [*const f32; 4], w: *const u16, k: usize) -> [f32; 4] {
+    let chunks16 = k / 16;
+    let mut r0 = [vdupq_n_f32(0.0); 4];
+    let mut r1 = [vdupq_n_f32(0.0); 4];
+    let mut r2 = [vdupq_n_f32(0.0); 4];
+    let mut r3 = [vdupq_n_f32(0.0); 4];
+    for c in 0..chunks16 {
+        let o = c * 16;
+        let wv = load_w16(w.add(o));
+        r0[0] = vfmaq_f32(r0[0], vld1q_f32(x[0].add(o)), wv[0]);
+        r0[1] = vfmaq_f32(r0[1], vld1q_f32(x[0].add(o + 4)), wv[1]);
+        r0[2] = vfmaq_f32(r0[2], vld1q_f32(x[0].add(o + 8)), wv[2]);
+        r0[3] = vfmaq_f32(r0[3], vld1q_f32(x[0].add(o + 12)), wv[3]);
+        r1[0] = vfmaq_f32(r1[0], vld1q_f32(x[1].add(o)), wv[0]);
+        r1[1] = vfmaq_f32(r1[1], vld1q_f32(x[1].add(o + 4)), wv[1]);
+        r1[2] = vfmaq_f32(r1[2], vld1q_f32(x[1].add(o + 8)), wv[2]);
+        r1[3] = vfmaq_f32(r1[3], vld1q_f32(x[1].add(o + 12)), wv[3]);
+        r2[0] = vfmaq_f32(r2[0], vld1q_f32(x[2].add(o)), wv[0]);
+        r2[1] = vfmaq_f32(r2[1], vld1q_f32(x[2].add(o + 4)), wv[1]);
+        r2[2] = vfmaq_f32(r2[2], vld1q_f32(x[2].add(o + 8)), wv[2]);
+        r2[3] = vfmaq_f32(r2[3], vld1q_f32(x[2].add(o + 12)), wv[3]);
+        r3[0] = vfmaq_f32(r3[0], vld1q_f32(x[3].add(o)), wv[0]);
+        r3[1] = vfmaq_f32(r3[1], vld1q_f32(x[3].add(o + 4)), wv[1]);
+        r3[2] = vfmaq_f32(r3[2], vld1q_f32(x[3].add(o + 8)), wv[2]);
+        r3[3] = vfmaq_f32(r3[3], vld1q_f32(x[3].add(o + 12)), wv[3]);
+    }
+    let mut s = [reduce4(r0), reduce4(r1), reduce4(r2), reduce4(r3)];
+    for i in chunks16 * 16..k {
+        let wf = crate::f16::f16_to_f32(*w.add(i));
+        s[0] += wf * *x[0].add(i);
+        s[1] += wf * *x[1].add(i);
+        s[2] += wf * *x[2].add(i);
+        s[3] += wf * *x[3].add(i);
+    }
+    s
+}
+
+/// fp16-resident GEMV: fp32 accumulation, `FCVTL` dequantisation in
+/// register, four accumulators over 16-wide chunks, scalar tail.
 pub fn matmul_mv_f16_neon(
     input: &[f32],
     weight: &[u16],
@@ -619,62 +803,28 @@ pub fn matmul_mv_f16_neon(
     out_features: usize,
     output: &mut [f32],
 ) {
-    let chunks16 = in_features / 16;
-    let rem_start = chunks16 * 16;
+    assert_eq!(input.len(), in_features);
+    assert_eq!(weight.len(), out_features * in_features);
+    assert_eq!(output.len(), out_features);
     for o in 0..out_features {
         let w_row = &weight[o * in_features..(o + 1) * in_features];
-        unsafe {
-            let mut acc0 = vdupq_n_f32(0.0);
-            let mut acc1 = vdupq_n_f32(0.0);
-            let mut acc2 = vdupq_n_f32(0.0);
-            let mut acc3 = vdupq_n_f32(0.0);
-            for c in 0..chunks16 {
-                let b = c * 16;
-                let h0 = vld1_u16(w_row.as_ptr().add(b));
-                let h1 = vld1_u16(w_row.as_ptr().add(b + 4));
-                let h2 = vld1_u16(w_row.as_ptr().add(b + 8));
-                let h3 = vld1_u16(w_row.as_ptr().add(b + 12));
-                acc0 = vfmaq_f32(acc0, vld1q_f32(input.as_ptr().add(b)), f16x4_to_f32x4(h0));
-                acc1 = vfmaq_f32(
-                    acc1,
-                    vld1q_f32(input.as_ptr().add(b + 4)),
-                    f16x4_to_f32x4(h1),
-                );
-                acc2 = vfmaq_f32(
-                    acc2,
-                    vld1q_f32(input.as_ptr().add(b + 8)),
-                    f16x4_to_f32x4(h2),
-                );
-                acc3 = vfmaq_f32(
-                    acc3,
-                    vld1q_f32(input.as_ptr().add(b + 12)),
-                    f16x4_to_f32x4(h3),
-                );
-            }
-            let mut acc = vaddvq_f32(vaddq_f32(vaddq_f32(acc0, acc1), vaddq_f32(acc2, acc3)));
-            for i in rem_start..in_features {
-                acc += crate::f16::f16_to_f32(w_row[i]) * input[i];
-            }
-            output[o] = acc;
-        }
+        // SAFETY: lengths asserted above; the row slice has `in_features`
+        // elements and `input` has `in_features` elements.
+        output[o] = unsafe { dot_f16_1(input.as_ptr(), w_row.as_ptr(), in_features) };
     }
 }
 
-/// Panel width of the fp16 GEMM: how many weight rows are dequantised
-/// into the f32 scratch panel at a time. 32 rows × k ≤ 2048 is ≤ 256 KB,
-/// which stays L2-resident on typical mobile cores while a 4-row block
-/// of `a` stays L1-hot across the whole panel.
-const MM_F16_PANEL: usize = 32;
-
-/// Batched fp16 GEMM `out[m × n] = a[m × k] · Wᵀ`. Each fp16 weight row
-/// is read from memory once and dequantised once (exactly — no value
-/// changes) into a panel of `MM_F16_PANEL` f32 rows; the loop nest is
-/// panel → 4-row block of `a` → weight row within the panel.
+/// Batched fp16 GEMM `out[m × n] = a[m × k] · Wᵀ`, register-blocked over
+/// activation rows: blocks of four rows, then a block of two, then a
+/// single row, each block streaming every fp16 weight row once and
+/// converting it once in register (no f32 scratch panel, no
+/// allocation). Called every autoregressive step (`m` = number of
+/// guidance streams) and every decoder frame (`m` = STFT columns per
+/// frame).
 ///
-/// Numerics: per `(i, j)` dot the accumulator structure is verbatim
-/// [`matmul_mv_f16_neon`] (4 accumulators × 16-wide chunks,
-/// `vaddvq((a0+a1)+(a2+a3))`, scalar tail after the reduce), so the
-/// result is bit-equal to `m` GEMV calls.
+/// Numerics: per `(i, j)` the dot is verbatim [`matmul_mv_f16_neon`]
+/// (same accumulator count, chunking, reduction and tail), so the result
+/// is bit-equal to `m` GEMV calls.
 pub fn matmul_mm_f16_neon(
     a: &[f32],
     weight: &[u16],
@@ -683,136 +833,47 @@ pub fn matmul_mm_f16_neon(
     n: usize,
     out: &mut [f32],
 ) {
-    let chunks16 = k / 16;
-    let rem_start = chunks16 * 16;
-    let m4 = m / 4 * 4;
-    // One allocation per call; the op runs once per layer during prefill,
-    // not inside the per-frame loop.
-    let mut wf = vec![0.0f32; MM_F16_PANEL.min(n) * k];
-    let mut jp = 0;
-    while jp < n {
-        let jb = MM_F16_PANEL.min(n - jp);
-        unsafe {
-            let quads = jb * k / 4;
-            let w_panel = weight.as_ptr().add(jp * k);
-            for q in 0..quads {
-                let h = vld1_u16(w_panel.add(q * 4));
-                vst1q_f32(wf.as_mut_ptr().add(q * 4), f16x4_to_f32x4(h));
-            }
-            for p in quads * 4..jb * k {
-                wf[p] = crate::f16::f16_to_f32(*w_panel.add(p));
-            }
+    assert_eq!(a.len(), m * k);
+    assert_eq!(weight.len(), n * k);
+    assert_eq!(out.len(), m * n);
+    let mut i = 0;
+    while i + 4 <= m {
+        let rows = &a[i * k..(i + 4) * k];
+        let x = [
+            rows.as_ptr(),
+            rows[k..].as_ptr(),
+            rows[2 * k..].as_ptr(),
+            rows[3 * k..].as_ptr(),
+        ];
+        for j in 0..n {
+            let w_row = &weight[j * k..(j + 1) * k];
+            // SAFETY: `rows` holds 4·k values, `w_row` holds k.
+            let s = unsafe { dot_f16_4(x, w_row.as_ptr(), k) };
+            out[i * n + j] = s[0];
+            out[(i + 1) * n + j] = s[1];
+            out[(i + 2) * n + j] = s[2];
+            out[(i + 3) * n + j] = s[3];
         }
-        let mut i = 0;
-        while i < m4 {
-            for jj in 0..jb {
-                let j = jp + jj;
-                unsafe {
-                    let a0 = a.as_ptr().add(i * k);
-                    let a1 = a.as_ptr().add((i + 1) * k);
-                    let a2 = a.as_ptr().add((i + 2) * k);
-                    let a3 = a.as_ptr().add((i + 3) * k);
-                    let wp = wf.as_ptr().add(jj * k);
-                    let mut r0a = vdupq_n_f32(0.0);
-                    let mut r0b = vdupq_n_f32(0.0);
-                    let mut r0c = vdupq_n_f32(0.0);
-                    let mut r0d = vdupq_n_f32(0.0);
-                    let mut r1a = vdupq_n_f32(0.0);
-                    let mut r1b = vdupq_n_f32(0.0);
-                    let mut r1c = vdupq_n_f32(0.0);
-                    let mut r1d = vdupq_n_f32(0.0);
-                    let mut r2a = vdupq_n_f32(0.0);
-                    let mut r2b = vdupq_n_f32(0.0);
-                    let mut r2c = vdupq_n_f32(0.0);
-                    let mut r2d = vdupq_n_f32(0.0);
-                    let mut r3a = vdupq_n_f32(0.0);
-                    let mut r3b = vdupq_n_f32(0.0);
-                    let mut r3c = vdupq_n_f32(0.0);
-                    let mut r3d = vdupq_n_f32(0.0);
-                    for c in 0..chunks16 {
-                        let b = c * 16;
-                        let w0 = vld1q_f32(wp.add(b));
-                        let w1 = vld1q_f32(wp.add(b + 4));
-                        let w2 = vld1q_f32(wp.add(b + 8));
-                        let w3 = vld1q_f32(wp.add(b + 12));
-                        r0a = vfmaq_f32(r0a, vld1q_f32(a0.add(b)), w0);
-                        r0b = vfmaq_f32(r0b, vld1q_f32(a0.add(b + 4)), w1);
-                        r0c = vfmaq_f32(r0c, vld1q_f32(a0.add(b + 8)), w2);
-                        r0d = vfmaq_f32(r0d, vld1q_f32(a0.add(b + 12)), w3);
-                        r1a = vfmaq_f32(r1a, vld1q_f32(a1.add(b)), w0);
-                        r1b = vfmaq_f32(r1b, vld1q_f32(a1.add(b + 4)), w1);
-                        r1c = vfmaq_f32(r1c, vld1q_f32(a1.add(b + 8)), w2);
-                        r1d = vfmaq_f32(r1d, vld1q_f32(a1.add(b + 12)), w3);
-                        r2a = vfmaq_f32(r2a, vld1q_f32(a2.add(b)), w0);
-                        r2b = vfmaq_f32(r2b, vld1q_f32(a2.add(b + 4)), w1);
-                        r2c = vfmaq_f32(r2c, vld1q_f32(a2.add(b + 8)), w2);
-                        r2d = vfmaq_f32(r2d, vld1q_f32(a2.add(b + 12)), w3);
-                        r3a = vfmaq_f32(r3a, vld1q_f32(a3.add(b)), w0);
-                        r3b = vfmaq_f32(r3b, vld1q_f32(a3.add(b + 4)), w1);
-                        r3c = vfmaq_f32(r3c, vld1q_f32(a3.add(b + 8)), w2);
-                        r3d = vfmaq_f32(r3d, vld1q_f32(a3.add(b + 12)), w3);
-                    }
-                    let mut s0 = vaddvq_f32(vaddq_f32(vaddq_f32(r0a, r0b), vaddq_f32(r0c, r0d)));
-                    let mut s1 = vaddvq_f32(vaddq_f32(vaddq_f32(r1a, r1b), vaddq_f32(r1c, r1d)));
-                    let mut s2 = vaddvq_f32(vaddq_f32(vaddq_f32(r2a, r2b), vaddq_f32(r2c, r2d)));
-                    let mut s3 = vaddvq_f32(vaddq_f32(vaddq_f32(r3a, r3b), vaddq_f32(r3c, r3d)));
-                    for p in rem_start..k {
-                        let w = *wp.add(p);
-                        s0 += w * *a0.add(p);
-                        s1 += w * *a1.add(p);
-                        s2 += w * *a2.add(p);
-                        s3 += w * *a3.add(p);
-                    }
-                    out[i * n + j] = s0;
-                    out[(i + 1) * n + j] = s1;
-                    out[(i + 2) * n + j] = s2;
-                    out[(i + 3) * n + j] = s3;
-                }
-            }
-            i += 4;
+        i += 4;
+    }
+    if i + 2 <= m {
+        let rows = &a[i * k..(i + 2) * k];
+        for j in 0..n {
+            let w_row = &weight[j * k..(j + 1) * k];
+            // SAFETY: `rows` holds 2·k values, `w_row` holds k.
+            let s = unsafe { dot_f16_2(rows.as_ptr(), rows[k..].as_ptr(), w_row.as_ptr(), k) };
+            out[i * n + j] = s[0];
+            out[(i + 1) * n + j] = s[1];
         }
-        // Remaining m % 4 rows, one at a time — same skeleton as the GEMV.
-        while i < m {
-            let a_row = &a[i * k..(i + 1) * k];
-            for jj in 0..jb {
-                let j = jp + jj;
-                unsafe {
-                    let wp = wf.as_ptr().add(jj * k);
-                    let mut acc0 = vdupq_n_f32(0.0);
-                    let mut acc1 = vdupq_n_f32(0.0);
-                    let mut acc2 = vdupq_n_f32(0.0);
-                    let mut acc3 = vdupq_n_f32(0.0);
-                    for c in 0..chunks16 {
-                        let b = c * 16;
-                        acc0 =
-                            vfmaq_f32(acc0, vld1q_f32(a_row.as_ptr().add(b)), vld1q_f32(wp.add(b)));
-                        acc1 = vfmaq_f32(
-                            acc1,
-                            vld1q_f32(a_row.as_ptr().add(b + 4)),
-                            vld1q_f32(wp.add(b + 4)),
-                        );
-                        acc2 = vfmaq_f32(
-                            acc2,
-                            vld1q_f32(a_row.as_ptr().add(b + 8)),
-                            vld1q_f32(wp.add(b + 8)),
-                        );
-                        acc3 = vfmaq_f32(
-                            acc3,
-                            vld1q_f32(a_row.as_ptr().add(b + 12)),
-                            vld1q_f32(wp.add(b + 12)),
-                        );
-                    }
-                    let mut acc =
-                        vaddvq_f32(vaddq_f32(vaddq_f32(acc0, acc1), vaddq_f32(acc2, acc3)));
-                    for p in rem_start..k {
-                        acc += *wp.add(p) * a_row[p];
-                    }
-                    out[i * n + j] = acc;
-                }
-            }
-            i += 1;
+        i += 2;
+    }
+    if i < m {
+        let row = &a[i * k..(i + 1) * k];
+        for j in 0..n {
+            let w_row = &weight[j * k..(j + 1) * k];
+            // SAFETY: both slices hold k values.
+            out[i * n + j] = unsafe { dot_f16_1(row.as_ptr(), w_row.as_ptr(), k) };
         }
-        jp += jb;
     }
 }
 
@@ -861,7 +922,10 @@ pub fn matmul_mv_i8_neon(
     }
 }
 
-/// Panel width of the int8 GEMM (same rationale as [`MM_F16_PANEL`]).
+/// Panel width of the int8 GEMM: how many weight rows are widened into
+/// the f32 scratch panel at a time (32 rows × k ≤ 2048 is ≤ 256 KB). The
+/// int8 path is not used by the shipped fp16 model and keeps the panel
+/// design; the fp16 GEMM above streams weights directly.
 const MM_I8_PANEL: usize = 32;
 
 /// Batched int8 GEMM `out[m × n] = a[m × k] · Wᵀ` with per-row scales.
