@@ -171,3 +171,11 @@ result). Timings on the 67-step sentence (5.44 s of audio): threads 1 — prime 
 efficiency cores hurts badly, which is why `auto` is capped at the performance-core count. Ten utterances back to back
 with `auto`: 333 steps, 26.6 s of audio in 3.9 s (RTF 14.6 %, includes ten primes and sustained-load scheduling).
 Recommended default on iOS: `threads = 0`.
+
+Step time under real-time pacing: when the sample paces synthesis to playback (the player blocks once 400 ms of
+audio is queued), the CPU idles about 75 ms of every 80 ms step and iOS lowers the core clock and moves the
+short bursts to efficiency cores; the same A15 then shows 23 ms per step instead of 5.5 ms. This is power
+management, not runtime cost: `-noaudio` or `-nopace` (synthesis never blocks on the player) restores 5.4 ms
+with the audio engine running and the UI updating. Measure throughput without pacing; for the tightest
+real-time margin on slow phones, synthesize in bursts with a larger queue (`LinnetPlayer(bufferMillis:)`, 1–2 s)
+so the core runs at full clock and then sleeps. `device-pace-experiment.sh` runs these modes on a device.

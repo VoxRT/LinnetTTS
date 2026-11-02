@@ -7,6 +7,7 @@ import LinnetTTS
 /// Launch arguments (for driving the app without touching the screen, e.g. from
 /// `xcrun simctl launch` / `xcrun devicectl device process launch`):
 ///   `-autospeak "<text>"`   speak the text as soon as the model is loaded, print the timings
+///   `-nopace` / `-bufferms N` do not block on playback (pure compute timing) / queue N ms ahead (default 400)
 ///                           to the log and exit;
 ///   `-threads N`            thread count for the auto run (default 0 = automatic);
 ///   `-repeat N`             repeat the utterance N times (default 1) and report the sum.
@@ -16,7 +17,23 @@ final class Speaker: ObservableObject {
     @Published var busy = false
     @Published var threads = 0
 
-    private let queue = DispatchQueue(label: "linnet.speaker", qos: .userInitiated)
+    /// Synthesis queue; `-qos interactive|initiated|utility|background` selects its QoS class (default: user-initiated).
+    private lazy var queue: DispatchQueue = {
+        let q: DispatchQoS
+        switch UserDefaults.standard.string(forKey: "qos") ?? "initiated" {
+        case "interactive": q = .userInteractive
+        case "utility": q = .utility
+        case "background": q = .background
+        default: q = .userInitiated
+        }
+        return DispatchQueue(label: "linnet.speaker", qos: q)
+    }()
+    /// `-quiet`: no per-step status updates (isolates UI work from synthesis timing).
+    private var quiet = false
+    /// `-noaudio`: synthesize without creating the audio engine at all (pure compute timing).
+    private var noAudio = false
+    /// Audio kept queued ahead of playback; `-nopace` makes it effectively unlimited (`-bufferms N` sets it).
+    private var bufferMillis = 400
     private var model: LinnetModel?
     private var voice: Voice?
     private var player: LinnetPlayer?
@@ -36,6 +53,11 @@ final class Speaker: ObservableObject {
         let auto = args.string(forKey: "autospeak")
         if let t = args.object(forKey: "threads") as? String, let n = Int(t) { threads = n }
         let repeats = max(1, args.integer(forKey: "repeat"))
+        let flags = Set(CommandLine.arguments)                                   // bare flags are not key/value pairs
+        quiet = flags.contains("-quiet")
+        noAudio = flags.contains("-noaudio")
+        if flags.contains("-nopace") { bufferMillis = 600_000 }                 // never block on the player: measures pure compute
+        else if let b = args.object(forKey: "bufferms") as? String, let n = Int(b), n > 0 { bufferMillis = n }
         queue.async { [self] in
             let dir = Self.documents
             let missing = Self.files.filter { !FileManager.default.fileExists(atPath: dir.appendingPathComponent($0).path) }
@@ -100,7 +122,7 @@ final class Speaker: ObservableObject {
     /// Streams one utterance through the player; returns the status line.
     private func run(text: String, threads: Int) throws -> String {
         guard let model, let voice else { return "model not loaded" }
-        let player = try LinnetPlayer(sampleRate: model.sampleRate)
+        let player: LinnetPlayer? = noAudio ? nil : try LinnetPlayer(sampleRate: model.sampleRate, bufferMillis: bufferMillis)
         self.player = player
         let session = try model.session(voice: voice, params: SynthParams(seed: 0, threads: threads))
         let t0 = Date()
@@ -120,14 +142,14 @@ final class Speaker: ObservableObject {
             stepTotal += dt
             if chunk.count == model.samplesPerStep { steps += 1 }
             samples += chunk.count
-            post(String(format: "speaking... %d steps, step %.1f ms", steps, dt))
-            try player.write(chunk)
+            if !quiet { post(String(format: "speaking... %d steps, step %.1f ms", steps, dt)) }
+            try player?.write(chunk)
         }
-        if cancelled { player.stop() } else { player.drain() }
+        if let player { if cancelled { player.stop() } else { player.drain() } }
         let audioMs = Double(samples) / Double(model.sampleRate) * 1000
         let line = String(
-            format: "%@threads %d: prime %.0f ms, first chunk %.0f ms, step mean %.1f ms, worst %.1f ms (80 ms budget)\n%d steps, %.0f ms audio in %.0f ms: RTF %.1f %% (playback pacing excluded)",
-            cancelled ? "stopped. " : "", model.threads, primeMs, firstMs, stepTotal / Double(max(1, steps + 1)), worst,
+            format: "%@qos %@%@ threads %d: prime %.0f ms, first chunk %.0f ms, step mean %.1f ms, worst %.1f ms (80 ms budget)\n%d steps, %.0f ms audio in %.0f ms: RTF %.1f %% (playback pacing excluded)",
+            cancelled ? "stopped. " : "", UserDefaults.standard.string(forKey: "qos") ?? "initiated", (noAudio ? " noaudio" : "") + (quiet ? " quiet" : "") + (bufferMillis > 10_000 ? " nopace" : ""), model.threads, primeMs, firstMs, stepTotal / Double(max(1, steps + 1)), worst,
             steps, audioMs, primeMs + stepTotal, 100 * (primeMs + stepTotal) / max(1, audioMs))
         log(line)
         return line
