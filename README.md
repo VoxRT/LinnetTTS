@@ -1,7 +1,7 @@
 # LinnetTTS
 
 Lightweight on-device text-to-speech by VoxRT: an autoregressive flow LM (1 NFE per frame) over a 25 Hz continuous-latent neural codec,
-with a Vocos-style decoder. ~35M parameters end to end, streaming synthesis, built-in voices, fp16 weights.
+with a Vocos-style decoder. ~41M parameters end to end (31.5M LM + 9.9M decoder), streaming synthesis, built-in voices, fp16 weights.
 
 - `python/` — model definition and inference (pure PyTorch, no training code).
 - `runtime/` — Rust runtime: `linnet-ops` (only the kernels this model uses) and `linnet-tts` (model, streaming session, C API).
