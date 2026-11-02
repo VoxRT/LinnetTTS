@@ -156,8 +156,9 @@ device destinations"), so the same test file is also compiled into `LinnetSample
 app, with `Tests/LinnetTTSTests/Assets/` copied in as a resource folder (`device-smoke.sh tests` does the copy
 and the run; the files are ignored by git).
 
-Results (0.0.1): all tests pass on the macOS host (Apple M5) and on the iPhone 17 Pro simulator; the audio MD5
-is identical on both, for every thread count. Host timings (release, 67-step sentence): threads 1 mean 3.3 ms
-per step (RTF 4.9 %), threads 4 mean 4.3 ms (the per-step work is too small on an M5 for the pool to pay off);
-simulator numbers are the same host CPU under the simulator runtime and a debug test host, several times
-slower and noisy; they do not predict a phone.
+Results (0.0.1): all tests pass on the macOS host (Apple M5) and on the iPhone 17 Pro simulator, both as the
+package tests and as `LinnetSampleTests`; the audio MD5 is identical everywhere, for every thread count. Host
+timings (release, 67-step sentence): threads 1 mean 3.3 ms per step (RTF 5 %), threads 4 mean 3.7-4.7 ms (the
+per-step work is too small on an M5 for the pool to pay off). The simulator runs on the same host CPU and gives
+the same numbers in a Release test host; it does not predict a phone. Device runs: `device-smoke.sh` (needs an
+unlocked login keychain on the Mac for `codesign`).
