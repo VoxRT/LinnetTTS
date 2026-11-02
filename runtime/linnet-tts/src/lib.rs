@@ -1,1 +1,47 @@
-//! linnet-tts — part of LinnetTTS (Apache-2.0).
+//! LinnetTTS runtime: a small autoregressive flow LM over continuous codec
+//! latents plus a causal Vocos-style decoder, with streaming synthesis.
+//!
+//! ```no_run
+//! use linnet_tts::{Linnet, Session, SynthParams, VoiceLatents};
+//!
+//! let model = Linnet::load("linnet-en-35m.safetensors", "tokenizer.model")?;
+//! let voice = VoiceLatents::load("voice.npy")?;
+//! let mut session = Session::new(&model, &voice, SynthParams::default())?;
+//! session.prime("Hello there.")?;
+//! let mut audio = Vec::new();
+//! while let Some(chunk) = session.step() {
+//!     audio.extend_from_slice(chunk); // 24 kHz f32
+//! }
+//! # Ok::<(), linnet_tts::Error>(())
+//! ```
+//!
+//! Weights are a single safetensors file (fp32 or fp16 matrices, see
+//! `docs/weights-format.md`); the tokenizer is a SentencePiece `.model`
+//! file; voices are `[T, 48]` `.npy` latents. All arithmetic accumulates
+//! in f32 through the kernels of `linnet-ops`.
+
+#![allow(clippy::needless_range_loop)]
+#![allow(clippy::too_many_arguments)]
+
+pub mod c_api;
+pub mod config;
+pub mod decoder;
+pub mod error;
+pub mod lm;
+pub mod rope;
+pub mod safetensors;
+pub mod session;
+pub mod tokenizer;
+pub mod voice;
+pub mod weights;
+
+pub use config::{DecoderConfig, LmConfig, ModelConfig, WEIGHTS_FORMAT};
+pub use decoder::VocosDecoder;
+pub use error::{Error, Result};
+pub use lm::FlowLm;
+pub use session::{Linnet, Session, SynthParams};
+pub use tokenizer::Tokenizer;
+pub use voice::VoiceLatents;
+
+/// Crate version string.
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");

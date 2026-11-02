@@ -32,7 +32,7 @@ matmul weights (with fp32 scales) is planned as a separate file, not a flag insi
 | `lm.bos_voice` | `[512]` | embedding inserted before the voice prompt |
 | `lm.voice_proj.weight` | `[512, 48]` | projection of voice-prompt latents into the trunk |
 | `lm.bos_latent` | `[48]` | the "start of audio" latent |
-| `lm.latent_in.weight` | `[512, 48]` | projection of generated latents into the trunk |
+| `lm.latent_in.weight` | `[512, 48]` | projection of sampled latents into the trunk |
 | `lm.latent_mean`, `lm.latent_std` | `[48]` | latent normalisation (the LM works in normalised latent space; outputs are de-normalised) |
 | `lm.trunk.layers.N.norm_attn.{weight,bias}` | `[512]` | pre-attention LayerNorm |
 | `lm.trunk.layers.N.attn.qkv.weight` | `[1536, 512]` | fused Q,K,V (no bias); RoPE on interleaved pairs, max period 1e4 |
@@ -51,9 +51,10 @@ matmul weights (with fp32 scales) is planned as a separate file, not a flag insi
 | `lm.head.out.ada.*` | `[1024, 512]` (+bias) | final shift/scale |
 | `lm.head.out.linear.*` | `[48, 512]` (+bias) | velocity output |
 
-Sampling (1 NFE): `x0 ~ N(0, temp² I)`, `v = head(z=x0, s=0, t=1, cond)`, latent `= x0 + v`; classifier-free guidance mixes the
-conditional and an unconditional pass whose context is `[bos_voice]` only: `v = v_uncond + cfg · (v_cond − v_uncond)`. One LM step
-produces one 48-dim latent = two consecutive 24-dim codec frames (25 Hz), i.e. 80 ms of audio.
+Sampling (1 NFE): `x0 ~ N(0, temp · I)`, `v = head(z=x0, s=0, t=1, cond)`, latent `= x0 + v`; classifier-free guidance mixes the
+trunk outputs of the conditional pass and of an unconditional pass whose context is `[bos_voice]` only,
+`z = z_uncond + cfg · (z_cond − z_uncond)`, and the mixed `z` feeds both the EOS logit and the head (one head evaluation per step).
+One LM step produces one 48-dim latent = two consecutive 24-dim codec frames (25 Hz), i.e. 80 ms of audio.
 
 ### Codec decoder (`decoder.*`)
 
