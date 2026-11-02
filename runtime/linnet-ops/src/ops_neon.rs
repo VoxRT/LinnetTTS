@@ -441,13 +441,32 @@ unsafe fn erf_neon_4(x: float32x4_t) -> float32x4_t {
     vreinterpretq_f32_u32(vorrq_u32(vreinterpretq_u32_f32(y), sign))
 }
 
-/// NEON in-place SiLU: `x[i] *= sigmoid(x[i])`. Scalar (libm) tail.
+/// NEON in-place SiLU: `x[i] *= sigmoid(x[i])`. Four vectors per
+/// iteration so the exp/divide dependency chains overlap (the per-lane
+/// math is unchanged, so the result is bit-equal to one vector at a
+/// time). Scalar (libm) tail.
 pub fn silu_inplace_neon(buf: &mut [f32]) {
     let n = buf.len();
     let chunks4 = n / 4;
     let rem_start = chunks4 * 4;
-    for c in 0..chunks4 {
-        unsafe {
+    let chunks16 = chunks4 / 4;
+    unsafe {
+        for c in 0..chunks16 {
+            let ptr = buf.as_mut_ptr().add(c * 16);
+            let v0 = vld1q_f32(ptr);
+            let v1 = vld1q_f32(ptr.add(4));
+            let v2 = vld1q_f32(ptr.add(8));
+            let v3 = vld1q_f32(ptr.add(12));
+            let s0 = sigmoid_neon_4(v0);
+            let s1 = sigmoid_neon_4(v1);
+            let s2 = sigmoid_neon_4(v2);
+            let s3 = sigmoid_neon_4(v3);
+            vst1q_f32(ptr, vmulq_f32(v0, s0));
+            vst1q_f32(ptr.add(4), vmulq_f32(v1, s1));
+            vst1q_f32(ptr.add(8), vmulq_f32(v2, s2));
+            vst1q_f32(ptr.add(12), vmulq_f32(v3, s3));
+        }
+        for c in chunks16 * 4..chunks4 {
             let ptr = buf.as_mut_ptr().add(c * 4);
             let v = vld1q_f32(ptr);
             let s = sigmoid_neon_4(v);
@@ -461,24 +480,40 @@ pub fn silu_inplace_neon(buf: &mut [f32]) {
     }
 }
 
-/// NEON in-place erf-GELU: `0.5 · x · (1 + erf(x / √2))`. Scalar tail
-/// uses [`crate::ops::erf_scalar`].
+/// NEON in-place erf-GELU: `0.5 · x · (1 + erf(x / √2))`, four vectors
+/// per iteration (bit-equal to one at a time). Scalar tail uses
+/// [`crate::ops::erf_scalar`].
 pub fn gelu_inplace_neon(buf: &mut [f32]) {
     let n = buf.len();
     let chunks4 = n / 4;
-    let (inv_sqrt2, half, one) = unsafe {
-        (
-            vdupq_n_f32(core::f32::consts::FRAC_1_SQRT_2),
-            vdupq_n_f32(0.5),
-            vdupq_n_f32(1.0),
-        )
-    };
-    for c in 0..chunks4 {
-        unsafe {
-            let ptr = buf.as_mut_ptr().add(c * 4);
-            let x = vld1q_f32(ptr);
+    let chunks16 = chunks4 / 4;
+    unsafe {
+        let inv_sqrt2 = vdupq_n_f32(core::f32::consts::FRAC_1_SQRT_2);
+        let half = vdupq_n_f32(0.5);
+        let one = vdupq_n_f32(1.0);
+        #[inline(always)]
+        unsafe fn gelu4(x: float32x4_t, inv_sqrt2: float32x4_t, half: float32x4_t, one: float32x4_t) -> float32x4_t {
             let e = erf_neon_4(vmulq_f32(x, inv_sqrt2));
-            vst1q_f32(ptr, vmulq_f32(vmulq_f32(half, x), vaddq_f32(one, e)));
+            vmulq_f32(vmulq_f32(half, x), vaddq_f32(one, e))
+        }
+        for c in 0..chunks16 {
+            let ptr = buf.as_mut_ptr().add(c * 16);
+            let x0 = vld1q_f32(ptr);
+            let x1 = vld1q_f32(ptr.add(4));
+            let x2 = vld1q_f32(ptr.add(8));
+            let x3 = vld1q_f32(ptr.add(12));
+            let y0 = gelu4(x0, inv_sqrt2, half, one);
+            let y1 = gelu4(x1, inv_sqrt2, half, one);
+            let y2 = gelu4(x2, inv_sqrt2, half, one);
+            let y3 = gelu4(x3, inv_sqrt2, half, one);
+            vst1q_f32(ptr, y0);
+            vst1q_f32(ptr.add(4), y1);
+            vst1q_f32(ptr.add(8), y2);
+            vst1q_f32(ptr.add(12), y3);
+        }
+        for c in chunks16 * 4..chunks4 {
+            let ptr = buf.as_mut_ptr().add(c * 4);
+            vst1q_f32(ptr, gelu4(vld1q_f32(ptr), inv_sqrt2, half, one));
         }
     }
     for v in buf[chunks4 * 4..].iter_mut() {
@@ -489,26 +524,46 @@ pub fn gelu_inplace_neon(buf: &mut [f32]) {
 /// NEON in-place tanh-GELU `0.5·x·(1 + tanh(inner))`,
 /// `inner = √(2/π)·(x + 0.044715·x³)`. Uses the identity
 /// `tanh(u) = 2σ(2u) − 1`, so `0.5·(1 + tanh(inner)) = σ(2·inner)` and
-/// `gelu_tanh(x) = x · σ(2·inner)` reuses [`sigmoid_neon_4`]. The tail
+/// `gelu_tanh(x) = x · σ(2·inner)` reuses [`sigmoid_neon_4`]. Four
+/// vectors per iteration (bit-equal to one at a time). The tail
 /// (< 4 elements) uses libm `tanh`, identical to the scalar reference.
 pub fn gelu_tanh_inplace_neon(buf: &mut [f32]) {
     const SQRT_2_OVER_PI: f32 = 0.797_884_6;
     let n = buf.len();
     let chunks4 = n / 4;
     let rem_start = chunks4 * 4;
+    let chunks16 = chunks4 / 4;
     unsafe {
         let c0 = vdupq_n_f32(SQRT_2_OVER_PI);
         let c3 = vdupq_n_f32(SQRT_2_OVER_PI * 0.044_715);
         let two = vdupq_n_f32(2.0);
-        for c in 0..chunks4 {
-            let ptr = buf.as_mut_ptr().add(c * 4);
-            let x = vld1q_f32(ptr);
+        #[inline(always)]
+        unsafe fn gt4(x: float32x4_t, c0: float32x4_t, c3: float32x4_t, two: float32x4_t) -> float32x4_t {
             let x2 = vmulq_f32(x, x);
             // inner = c0·x + c3·x³ = x·(c0 + c3·x²)
             let poly = vfmaq_f32(c0, c3, x2);
             let inner = vmulq_f32(x, poly);
             let s = sigmoid_neon_4(vmulq_f32(two, inner));
-            vst1q_f32(ptr, vmulq_f32(x, s));
+            vmulq_f32(x, s)
+        }
+        for c in 0..chunks16 {
+            let ptr = buf.as_mut_ptr().add(c * 16);
+            let x0 = vld1q_f32(ptr);
+            let x1 = vld1q_f32(ptr.add(4));
+            let x2 = vld1q_f32(ptr.add(8));
+            let x3 = vld1q_f32(ptr.add(12));
+            let y0 = gt4(x0, c0, c3, two);
+            let y1 = gt4(x1, c0, c3, two);
+            let y2 = gt4(x2, c0, c3, two);
+            let y3 = gt4(x3, c0, c3, two);
+            vst1q_f32(ptr, y0);
+            vst1q_f32(ptr.add(4), y1);
+            vst1q_f32(ptr.add(8), y2);
+            vst1q_f32(ptr.add(12), y3);
+        }
+        for c in chunks16 * 4..chunks4 {
+            let ptr = buf.as_mut_ptr().add(c * 4);
+            vst1q_f32(ptr, gt4(vld1q_f32(ptr), c0, c3, two));
         }
     }
     for v in buf.iter_mut().take(n).skip(rem_start) {
@@ -557,10 +612,31 @@ pub fn softmax_row_inplace_neon(scores: &mut [f32], rows: usize, cols: usize) {
             continue;
         }
 
-        // 2. exp(v - m), accumulate sum.
+        // 2. exp(v - m), accumulate sum. Four exps per iteration so their
+        //    dependency chains overlap; the sum is still accumulated one
+        //    chunk at a time in the same order, so this pass is bit-equal
+        //    to the one-vector-per-iteration form.
         let mv = unsafe { vdupq_n_f32(m) };
         let mut sum_v = unsafe { vdupq_n_f32(0.0) };
-        for c in 0..chunks4 {
+        let chunks16 = chunks4 / 4;
+        for c in 0..chunks16 {
+            unsafe {
+                let ptr = row.as_mut_ptr().add(c * 16);
+                let e0 = expf_neon_4(vsubq_f32(vld1q_f32(ptr), mv));
+                let e1 = expf_neon_4(vsubq_f32(vld1q_f32(ptr.add(4)), mv));
+                let e2 = expf_neon_4(vsubq_f32(vld1q_f32(ptr.add(8)), mv));
+                let e3 = expf_neon_4(vsubq_f32(vld1q_f32(ptr.add(12)), mv));
+                sum_v = vaddq_f32(sum_v, e0);
+                sum_v = vaddq_f32(sum_v, e1);
+                sum_v = vaddq_f32(sum_v, e2);
+                sum_v = vaddq_f32(sum_v, e3);
+                vst1q_f32(ptr, e0);
+                vst1q_f32(ptr.add(4), e1);
+                vst1q_f32(ptr.add(8), e2);
+                vst1q_f32(ptr.add(12), e3);
+            }
+        }
+        for c in chunks16 * 4..chunks4 {
             unsafe {
                 let ptr = row.as_mut_ptr().add(c * 4);
                 let v = vld1q_f32(ptr);
