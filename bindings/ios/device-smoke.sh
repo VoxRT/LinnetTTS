@@ -18,6 +18,7 @@
 set -euo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
+"$here/build-xcframework.sh" >/dev/null   # the local xcframework copy is not versioned; rebuild it (cached, seconds)
 root="$(cd "$here/../.." && pwd)"
 what="${1:-all}"
 : "${LINNET_DEVICE:?set LINNET_DEVICE to the device UDID}"
