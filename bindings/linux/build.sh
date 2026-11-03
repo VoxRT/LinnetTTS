@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build the LinnetTTS C distribution for Linux.
 #
-#   bindings/linux/build.sh [--target <triple>] [--out <dir>] [--no-strip]
+#   bindings/linux/build.sh [--target <triple>] [--out <dir>] [--no-strip] [--zig]
 #
 # Produces dist/linnet-tts-<version>-linux-<arch>/ with
 #   lib/liblinnet_tts.so   shared library
@@ -11,7 +11,8 @@
 # and a .tar.gz of that directory next to it.
 #
 # Targets:
-#   x86_64-unknown-linux-gnu   (default) built with the host toolchain
+#   x86_64-unknown-linux-gnu   (default) built with the host toolchain (glibc floor = the host's glibc);
+#                              pass --zig to build it with cargo-zigbuild against glibc 2.17 instead
 #   aarch64-unknown-linux-gnu  cross-built with `cargo zigbuild --target aarch64-unknown-linux-gnu.2.17`
 #                              (glibc 2.17 floor) when cargo-zigbuild and zig are installed; otherwise
 #                              falls back to `cargo build` with aarch64-linux-gnu-gcc as the linker if that
@@ -21,13 +22,15 @@ set -euo pipefail
 TARGET=x86_64-unknown-linux-gnu
 STRIP=1
 OUT=""
+ZIG=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --target) TARGET="$2"; shift 2 ;;
     --target=*) TARGET="${1#--target=}"; shift ;;
     --out) OUT="$2"; shift 2 ;;
     --no-strip) STRIP=0; shift ;;
-    -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
+    --zig) ZIG=1; shift ;;
+    -h|--help) sed -n '2,21p' "$0"; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
 done
@@ -61,12 +64,15 @@ cd "$RUNTIME"
 # Release profile for distribution: fat LTO, one codegen unit. Panics stay
 # "unwind" because the C API catches them and turns them into error codes.
 export CARGO_PROFILE_RELEASE_LTO=fat CARGO_PROFILE_RELEASE_CODEGEN_UNITS=1 CARGO_PROFILE_RELEASE_PANIC=unwind
-if [ "$ARCH" = "$HOST_ARCH" ]; then
+if [ "$ARCH" = "$HOST_ARCH" ] && [ "$ZIG" = 0 ]; then
   # Native build. Do not pass -C target-cpu: the kernels select AVX2/NEON at run time.
   cargo build --release -p linnet-tts --target "$TARGET"
 elif have cargo-zigbuild && (have zig || python3 -c 'import ziglang' 2>/dev/null); then
-  echo "== cross build via cargo zigbuild (glibc $GLIBC_MIN)"
+  echo "== build via cargo zigbuild (glibc $GLIBC_MIN)"
   cargo zigbuild --release -p linnet-tts --target "$TARGET.$GLIBC_MIN"
+elif [ "$ZIG" = 1 ]; then
+  echo "--zig needs cargo-zigbuild and zig: cargo install cargo-zigbuild; pip install ziglang" >&2
+  exit 1
 else
   CROSS_CC=""
   case "$ARCH" in

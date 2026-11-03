@@ -1,0 +1,113 @@
+# Continuous integration: Rust runtime on Linux and macOS, Linux C tarball, Python wheels,
+# PyTorch reference package tests that need no weights. Golden tests that need the model
+# files skip by themselves.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust:
+    name: runtime (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    defaults:
+      run:
+        working-directory: runtime
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: runtime
+      - name: Build
+        run: cargo build --release --locked -p linnet-tts
+      - name: Clippy
+        run: cargo clippy --all-targets --locked -- -D warnings
+      - name: Test
+        run: cargo test --release --locked
+
+  linux-c:
+    name: Linux C tarball (x86_64, host toolchain)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: runtime
+      - name: Build distribution
+        run: bindings/linux/build.sh
+      - name: Compile the C examples against it
+        run: |
+          VERSION=$(sed -n 's/^version *= *"\([^"]*\)".*/\1/p' runtime/linnet-tts/Cargo.toml | head -1)
+          make -C bindings/linux/examples DIST=../dist/linnet-tts-$VERSION-linux-x86_64
+          make -C bindings/linux/examples clean
+          make -C bindings/linux/examples DIST=../dist/linnet-tts-$VERSION-linux-x86_64 STATIC=1
+
+  android-jni-host:
+    name: Android JNI crate (host tests)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: bindings/android/jni-crate
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: bindings/android/jni-crate
+      - name: Test
+        run: cargo test --release --locked
+
+  wheel:
+    name: wheel linnet-tts (linux ${{ matrix.target }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [x86_64, aarch64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: PyO3/maturin-action@v1
+        with:
+          working-directory: bindings/python
+          target: ${{ matrix.target }}
+          manylinux: 2_17
+          args: --release --locked --out dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheel-linux-${{ matrix.target }}
+          path: bindings/python/dist/*.whl
+          if-no-files-found: error
+
+  torch-reference:
+    name: linnet-tts-torch tests (no weights)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install (CPU torch)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install -e python pytest
+      - name: Test
+        # tests/test_parity.py: decoder streaming == offline, deterministic sampling.
+        # Everything that needs the reference stack or the weights skips.
+        run: python -m pytest tests -q

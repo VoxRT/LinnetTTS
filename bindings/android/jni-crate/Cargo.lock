@@ -82,11 +82,11 @@ dependencies = [
 
 [[package]]
 name = "linnet-ops"
-version = "0.0.1"
+version = "0.1.0"
 
 [[package]]
 name = "linnet-tts"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "linnet-ops",
  "serde",
@@ -95,7 +95,7 @@ dependencies = [
 
 [[package]]
 name = "linnet-tts-jni"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "jni",
  "linnet-tts",

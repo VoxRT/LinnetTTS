@@ -1,0 +1,178 @@
+# Tagged release: builds every distributable from the tag and attaches it to the GitHub
+# release. Model weights are not built here; they are released separately (weights-vN).
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check-version:
+    name: tag matches the crate version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        run: |
+          VERSION=$(sed -n 's/^version *= *"\([^"]*\)".*/\1/p' runtime/linnet-tts/Cargo.toml | head -1)
+          echo "crate version $VERSION, tag $GITHUB_REF_NAME"
+          test "v$VERSION" = "$GITHUB_REF_NAME"
+          grep -q "^## \[$VERSION\]" CHANGELOG.md
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+  wheels:
+    name: wheel (${{ matrix.name }})
+    needs: check-version
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64
+            os: ubuntu-latest
+            target: x86_64
+            manylinux: "2_17"
+          - name: linux-aarch64
+            os: ubuntu-latest
+            target: aarch64
+            manylinux: "2_17"
+          - name: macos-arm64
+            os: macos-14
+            target: aarch64-apple-darwin
+            manylinux: auto
+    steps:
+      - uses: actions/checkout@v4
+      - uses: PyO3/maturin-action@v1
+        with:
+          working-directory: bindings/python
+          target: ${{ matrix.target }}
+          manylinux: ${{ matrix.manylinux }}
+          args: --release --locked --out dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheel-${{ matrix.name }}
+          path: bindings/python/dist/*.whl
+          if-no-files-found: error
+
+  linux-c:
+    name: Linux C tarballs (x86_64 + aarch64, glibc 2.17)
+    needs: check-version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu
+      - uses: goto-bus-stop/setup-zig@v2
+        with:
+          version: 0.13.0
+      - name: Install cargo-zigbuild and a cross strip
+        run: |
+          cargo install --locked cargo-zigbuild
+          sudo apt-get update && sudo apt-get install -y binutils-aarch64-linux-gnu
+      - name: Build x86_64 (cargo-zigbuild, glibc 2.17)
+        run: bindings/linux/build.sh --zig
+      - name: Build aarch64 (cargo-zigbuild, glibc 2.17)
+        run: bindings/linux/build.sh --target aarch64-unknown-linux-gnu
+      - name: Compile the C examples against the x86_64 tarball
+        run: |
+          make -C bindings/linux/examples DIST=../dist/linnet-tts-${{ needs.check-version.outputs.version }}-linux-x86_64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-c
+          path: |
+            bindings/linux/dist/*.tar.gz
+            bindings/linux/dist/*.tar.gz.sha256
+          if-no-files-found: error
+
+  android:
+    name: Android AAR
+    needs: check-version
+    runs-on: ubuntu-latest
+    env:
+      NDK_VERSION: 27.3.13750724
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platforms;android-35 build-tools;35.0.0 ndk;27.3.13750724
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android, x86_64-linux-android
+      - name: Install cargo-ndk
+        run: cargo install --locked cargo-ndk
+      - name: Build the native libraries (arm64-v8a + x86_64)
+        run: ANDROID_NDK_HOME="$ANDROID_HOME/ndk/$NDK_VERSION" bindings/android/build-native.sh
+      - name: Build the AAR
+        working-directory: bindings/android
+        run: ./gradlew --no-daemon :linnet-tts:assembleRelease
+      - name: Name the artefact
+        run: |
+          V=${{ needs.check-version.outputs.version }}
+          mkdir -p out
+          cp bindings/android/linnet-tts/build/outputs/aar/linnet-tts-release.aar out/linnet-tts-$V.aar
+          (cd out && sha256sum linnet-tts-$V.aar > linnet-tts-$V.aar.sha256)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-aar
+          path: out/*
+          if-no-files-found: error
+
+  ios:
+    name: iOS xcframework
+    needs: check-version
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios, aarch64-apple-ios-sim, x86_64-apple-ios, aarch64-apple-darwin
+      - name: Build (static libraries, no code signing involved)
+        run: bindings/ios/build-xcframework.sh
+      - name: Name the artefacts
+        run: |
+          V=${{ needs.check-version.outputs.version }}
+          mkdir -p out
+          cp bindings/ios/dist/LinnetTTS.xcframework.zip out/LinnetTTS-$V.xcframework.zip
+          (cd out && shasum -a 256 LinnetTTS-$V.xcframework.zip > LinnetTTS-$V.xcframework.zip.sha256)
+          cp bindings/ios/dist/LinnetTTS.xcframework.checksum out/LinnetTTS-$V.xcframework.swiftpm-checksum
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios-xcframework
+          path: out/*
+          if-no-files-found: error
+
+  release:
+    name: GitHub release
+    needs: [check-version, wheels, linux-c, android, ios]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: assets
+          merge-multiple: true
+      - name: Release notes from CHANGELOG.md
+        run: |
+          V=${{ needs.check-version.outputs.version }}
+          awk -v v="$V" '/^## \[/{p = ($0 ~ "^## \\[" v "\\]")} p' CHANGELOG.md > notes.md
+          echo "Model weights are published separately (release weights-vN, see README.md)." >> notes.md
+          (cd assets && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt)
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: LinnetTTS ${{ needs.check-version.outputs.version }}
+          body_path: notes.md
+          files: assets/*
+          fail_on_unmatched_files: true

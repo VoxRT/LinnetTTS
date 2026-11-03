@@ -42,6 +42,7 @@ chunk. Measure throughput without pacing; the sample apps' `-nopace`/`-noaudio` 
 ```sh
 bindings/linux/build.sh                                        # x86_64, host toolchain
 bindings/linux/build.sh --target aarch64-unknown-linux-gnu     # cross build
+bindings/linux/build.sh --zig                                  # x86_64 with cargo-zigbuild, glibc 2.17 floor
 ```
 
 Output: `bindings/linux/dist/linnet-tts-<version>-linux-<arch>/{lib,include,examples,README.md,LICENSE}` plus a
@@ -49,14 +50,16 @@ Output: `bindings/linux/dist/linnet-tts-<version>-linux-<arch>/{lib,include,exam
 libraries, and reports the glibc symbol versions the `.so` needs. The aarch64 cross build uses
 `cargo zigbuild --target aarch64-unknown-linux-gnu.2.17` when cargo-zigbuild and zig are present (glibc 2.17
 floor), otherwise a GNU cross compiler (`aarch64-linux-gnu-gcc`) as the linker, otherwise it prints what to
-install and exits. The x86_64 kernels pick AVX2+FMA at run time; no `-C target-cpu` is used.
+install and exits. The native x86_64 build requires the glibc of the build host (2.34 on Ubuntu 22.04); `--zig`
+builds it with cargo-zigbuild against glibc 2.17 as well, which is what the release workflow does. The x86_64
+kernels pick AVX2+FMA at run time; no `-C target-cpu` is used.
 
 Examples (`bindings/linux/examples/`): `synth.c` writes a sentence to a 16-bit WAV with `linnet_synthesize`;
 `stream.c` drives `linnet_session_*` chunk by chunk and reports time to first audio and the worst step.
 
 ```sh
 cd bindings/linux/examples
-make DIST=../dist/linnet-tts-0.0.1-linux-x86_64            # or STATIC=1
+make DIST=../dist/linnet-tts-<version>-linux-x86_64        # or STATIC=1
 ./synth  weights.safetensors tokenizer.model voice.npy "Hello there." hello.wav
 ./stream weights.safetensors tokenizer.model voice.npy "Hello there." hello_stream.wav
 ```

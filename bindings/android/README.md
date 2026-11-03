@@ -104,12 +104,12 @@ cp jni-crate/target/aarch64-linux-android/release/liblinnet_tts_jni.so linnet-tt
 Until the artefact is published, publish to the local Maven repository or drop the AAR into the app:
 
 ```sh
-./gradlew :linnet-tts:publishToMavenLocal     # com.voxrt.linnet:linnet-tts:0.0.1 in ~/.m2
+./gradlew :linnet-tts:publishToMavenLocal     # com.voxrt.linnet:linnet-tts:0.1.0 in ~/.m2
 ```
 
 ```kotlin
 // settings.gradle.kts: repositories { mavenLocal(); google(); mavenCentral() }
-dependencies { implementation("com.voxrt.linnet:linnet-tts:0.0.1") }
+dependencies { implementation("com.voxrt.linnet:linnet-tts:0.1.0") }
 // or: implementation(files("libs/linnet-tts-release.aar"))
 ```
 
