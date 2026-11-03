@@ -1,6 +1,6 @@
 # Model card: `linnet-en-35m` (draft)
 
-> Draft for review. Open before publication: the final weights license text and the provenance of the built-in voices.
+> Draft for review. Open before publication: the final weights license text and the artists' credits for the built-in voices.
 
 ## Summary
 
@@ -110,6 +110,18 @@ One step produces 80 ms of audio (one LM step plus two decoder frames). Output i
 
 Measured without real-time pacing; when synthesis is paced to playback, mobile power management raises the step time 3–4× (see
 `bindings/README.md`, "Playback and step time"). An integer (W8A8) variant for weaker devices and a browser build are planned for a later release.
+
+## Built-in voices
+
+| voice | file | sex | prompt | source |
+|---|---|---|---|---|
+| `linnet-en-f1` | `voices/linnet-en-f1.npy` (109 × 48) | female | 8.6 s | recording of a professional voice artist working with VoxRT |
+| `linnet-en-m1` | `voices/linnet-en-m1.npy` (84 × 48) | male | 6.7 s | recording of a professional voice artist working with VoxRT |
+
+Both artists gave written consent to the cloning of their voices and to the distribution of the voice latents under the Linnet Weights
+License. Credits: to be added before publication (name or pseudonym, as each artist chooses). The voices may be used as product voices;
+they may not be presented as the artists themselves or as their endorsement (`WEIGHTS_LICENSE.md`, Section 7). The prompts were cut from
+spoken-video recordings (AAC 48 kHz), resampled to 24 kHz and peak-normalised to −3 dBFS; no denoising was applied.
 
 ## Intended use and limitations
 
