@@ -150,9 +150,31 @@ jobs:
           PV=$(grep -E '^let version = "' Package.swift | sed -E 's/.*"(.*)".*/\1/')
           test "$PV" = "$V" || { echo "Package.swift version $PV != $V"; exit 1; }
 
+  pypi:
+    name: Publish wheels to PyPI
+    needs: [check-version, wheels]
+    runs-on: ubuntu-latest
+    # Trusted publishing (OIDC): the PyPI project "linnet-tts" lists this repository, this workflow file and the
+    # environment "pypi" as its publisher; no API token is stored in the repository.
+    environment: pypi
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: wheel-*
+          path: dist
+          merge-multiple: true
+      - run: ls -l dist
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist
+          skip-existing: true
+
   release:
     name: GitHub release
-    needs: [check-version, wheels, linux-c, android, ios]
+    needs: [check-version, wheels, linux-c, android, ios, pypi]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
