@@ -1,6 +1,6 @@
 # Model card: `linnet-en-35m` (draft)
 
-> Draft for review. Items marked **TODO** must be settled before the weights are published.
+> Draft for review. Open before publication: the final weights license text and the provenance of the built-in voices.
 
 ## Summary
 
@@ -35,18 +35,52 @@ by a separate encoder that is not part of this release), streams audio from the 
 
 Every operator is causal; there is no lookahead anywhere in the chain. See `docs/streaming-contract.md` and `docs/weights-format.md`.
 
-## Training data
+## Training data and licenses
 
-**Codec** (encoder + decoder, trained first and then frozen): about 5 600 hours in 8 languages (German, English, Spanish, French, Chinese,
-Russian, Italian, Portuguese) from public corpora: LibriVox-derived multilingual TTS corpora (CC BY 4.0), HiFiTTS-2 (CC BY 4.0), LibriTTS-R
-(CC BY 4.0), Emilia-YODAS (CC BY 4.0), AISHELL-3 (Apache-2.0), and smaller public sets. **TODO**: finish the license audit of the smaller sets
-(HUI German corpus, the Russian LibriVox subset, Google LatAm Spanish — CC BY-SA 4.0) and list every source with its license here.
+All training data comes from public corpora whose licenses permit commercial use. No proprietary or user data was used. Common Voice was used for
+validation only. Each corpus was resampled to 24 kHz, filtered for bandwidth and noise, and cut into utterances; the recordings themselves are not
+redistributed with this model. The copyright of the recordings remains with their original creators.
 
-**Flow LM**: about 6 000 hours of English speech with word-level alignments: Emilia-YODAS English (≈4 200 h, CC BY 4.0), HiFiTTS-2 (≈1 200 h, CC BY 4.0),
-LibriTTS-R (≈530 h, CC BY 4.0) and ≈75 h of synthetic speech for numbers, dates, currencies and similar formats. About 10 % of utterances also
-carried an alternative written form of the transcript (digits vs words). **TODO**: confirm the terms of use of the synthetic-speech generator's outputs.
+**Codec** (encoder + decoder, trained first and then frozen; the decoder is part of this release): 5 612 hours in 8 languages.
 
-No proprietary or user data was used. Common Voice was used for validation only.
+| corpus | language | hours | license | source |
+|---|---|---|---|---|
+| CML-TTS (de, es, fr, it, pt) | de/es/fr/it/pt | 2 302 | CC BY 4.0 | [OpenSLR 146](https://www.openslr.org/146/), LibriVox recordings |
+| HiFiTTS-2 | en | 1 220 | CC BY 4.0 (manifests); audio from LibriVox (public domain) | [nvidia/hifitts-2](https://huggingface.co/datasets/nvidia/hifitts-2) |
+| Emilia-YODAS (de, fr, zh) | de/fr/zh | 956 | CC BY 4.0 (the base Emilia set, CC BY-NC 4.0, was not used) | [amphion/Emilia-Dataset](https://huggingface.co/datasets/amphion/Emilia-Dataset), derived from YODAS2 (YouTube, CC BY 3.0) |
+| LibriTTS-R | en | 507 | CC BY 4.0 | [OpenSLR 141](https://www.openslr.org/141/) |
+| HUI-Audio-Corpus-German (clean) | de | 248 | CC0 (as stated by the authors, arXiv 2106.06309); LibriVox recordings | [opendata.iisys.de](https://opendata.iisys.de/dataset/hui-audio-corpus-german/) |
+| YO-CPT-ru | ru | 163 | CC BY 4.0 (annotations); audio CC BY 3.0 (YouTube, via YODAS2) | [NCSpeech/YO-CPT-ru](https://huggingface.co/datasets/NCSpeech/YO-CPT-ru) |
+| AISHELL-3 | zh | 82 | Apache-2.0 | [OpenSLR 93](https://www.openslr.org/93/) |
+| Thorsten-Voice TV-44kHz-Full | de | 39 | CC0 1.0 | [Thorsten-Voice/TV-44kHz-Full](https://huggingface.co/datasets/Thorsten-Voice/TV-44kHz-Full) |
+| Crowdsourced Latin American Spanish | es | 36 | CC BY-SA 4.0 | [OpenSLR 61, 71–75](https://www.openslr.org/61/) |
+| Vibravox (speech_clean, headset) | fr | 31 | CC BY 4.0 | [Cnam-LMSSC/vibravox](https://huggingface.co/datasets/Cnam-LMSSC/vibravox) |
+| Dialogs (Langswap) | ru | 17 | OpenRAIL (commercial use permitted; use restrictions carried into the weights license) | [langswap/dialogs-ru-emotional-conversations](https://huggingface.co/datasets/langswap/dialogs-ru-emotional-conversations) |
+| SIWIS French Speech Synthesis Database | fr | 11 | CC BY 4.0 | [Edinburgh DataShare](https://datashare.ed.ac.uk/handle/10283/2353) |
+
+**Flow LM** (this release): 6 012 hours of English speech with word-level alignments.
+
+| corpus | hours | license | source |
+|---|---|---|---|
+| Emilia-YODAS (en) | 4 192 | CC BY 4.0 | [amphion/Emilia-Dataset](https://huggingface.co/datasets/amphion/Emilia-Dataset) |
+| HiFiTTS-2 | 1 220 | CC BY 4.0; audio from LibriVox (public domain) | [nvidia/hifitts-2](https://huggingface.co/datasets/nvidia/hifitts-2) |
+| LibriTTS-R | 527 | CC BY 4.0 | [OpenSLR 141](https://www.openslr.org/141/) |
+| synthetic speech for numbers, dates, currencies and similar formats | 74 | generated with Qwen3-TTS (Apache-2.0, no restrictions on outputs), in the voices of corpus speakers | [Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice](https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice) |
+
+About 10 % of the LM utterances also carried an alternative written form of the transcript (digits instead of words), generated with a text model.
+
+Notes on specific licenses:
+
+- *CC BY-SA 4.0* (Latin American Spanish, 0.6 % of the codec data): whether trained weights are an "adaptation" under ShareAlike is legally unsettled.
+  The set is credited here; the weights are published under the Linnet weights license.
+- *OpenRAIL* (Dialogs, 0.3 % of the codec data): the license requires that derivative models carry its use restrictions; they are reproduced in
+  `WEIGHTS_LICENSE.md`.
+- *YouTube-derived corpora* (Emilia-YODAS, YO-CPT-ru): the CC BY licenses were declared by the video authors and collected by the corpus authors,
+  who honour removal requests.
+
+Training-time tools that are not part of the release: a WavLM model (MIT) served as a feature teacher for the codec encoder; the decoder follows the
+Vocos architecture (Vocos: Siuzdak, 2023) in our own implementation; the LM was trained with a training library whose code is not included here.
+Please cite the Emilia papers (arXiv 2407.05361, 2501.15907) when citing the data.
 
 ## Evaluation
 
@@ -60,13 +94,22 @@ No proprietary or user data was used. Common Voice was used for validation only.
 - Numerical parity: the PyTorch package reproduces the training-side implementation bit for bit on the reference vectors in `tests/goldens/ref`;
   the Rust runtime matches the PyTorch package to 1e-5 on latents.
 
-## Performance (Rust runtime, single thread, fp16 weights)
+## Performance (Rust runtime, fp16 weights)
 
-| host | per LM step | decoder per frame | first audio | real-time factor |
+One step produces 80 ms of audio (one LM step plus two decoder frames). Output is bit-identical for any thread count.
+
+| device | threads | per step | first audio after text | real-time factor |
 |---|---|---|---|---|
-| desktop x86-64 (AVX2) | 8.1 ms | 1.0 ms | 74 ms after prime | 11 % |
+| desktop x86-64 (AVX2) | 1 | 8.8 ms | 74 ms | 11 % |
+| Snapdragon 662, Cortex-A73 (Android) | 1 | 42.4 ms | — | 62 % |
+| Snapdragon 662, 4 big cores (Android, auto) | 4 | 14.3 ms | — | 21 % |
+| iPhone 11, A13 (iOS) | 1 (auto) | 6.7–7.1 ms | 107–116 ms | 9 % |
+| iPhone 13 Pro Max, A15 (iOS) | 1 (auto) | 5.5 ms | 85 ms | 8.3 % |
+| iPhone 13 Pro Max, A15 (iOS) | 2 | 4.6 ms | 51 ms | 6.6 % |
+| Apple M5 (macOS) | 1 | 3.3 ms | — | 5 % |
 
-**TODO**: mobile (aarch64 NEON) and browser (WASM SIMD) numbers; int8 variant.
+Measured without real-time pacing; when synthesis is paced to playback, mobile power management raises the step time 3–4× (see
+`bindings/README.md`, "Playback and step time"). An integer (W8A8) variant for weaker devices and a browser build are planned for a later release.
 
 ## Intended use and limitations
 
