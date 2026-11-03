@@ -103,6 +103,8 @@ One step produces 80 ms of audio (one LM step plus two decoder frames). Output i
 | desktop x86-64 (AVX2) | 1 | 8.8 ms | 74 ms | 11 % |
 | Snapdragon 662, Cortex-A73 (Android) | 1 | 42.4 ms | — | 62 % |
 | Snapdragon 662, 4 big cores (Android, auto) | 4 | 14.3 ms | — | 21 % |
+| Raspberry Pi Zero 2 W, Cortex-A53 1 GHz (Linux) | 1 | 158 ms | — | 242 % |
+| Raspberry Pi Zero 2 W, 4 cores (Linux, auto) | 4 | 59–60 ms | — | 88 % |
 | iPhone 11, A13 (iOS) | 1 (auto) | 6.7–7.1 ms | 107–116 ms | 9 % |
 | iPhone 13 Pro Max, A15 (iOS) | 1 (auto) | 5.5 ms | 85 ms | 8.3 % |
 | iPhone 13 Pro Max, A15 (iOS) | 2 | 4.6 ms | 51 ms | 6.6 % |

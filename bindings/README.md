@@ -73,6 +73,16 @@ make DIST=../dist/linnet-tts-<version>-linux-x86_64        # or STATIC=1
 Linking by hand: `-Iinclude -Llib -llinnet_tts -lm` (shared) or `lib/liblinnet_tts.a -lpthread -ldl -lm`
 (static).
 
+### Raspberry Pi
+
+The aarch64 tarball runs unchanged on a Raspberry Pi (64-bit OS; the gcc build needs glibc 2.34 or newer, the `--zig`
+build glibc 2.17). Measured on a Pi Zero 2 W (4 × Cortex-A53 at 1 GHz, 512 MB, Debian 13, no heatsink) with the fp16
+weights and a 7.0 s sentence: 1 thread 158 ms per step (RTF 242 %); `threads` auto picks all four cores and gives
+59–60 ms per step (RTF 88 %, worst step 63–76 ms), i.e. real time with a small margin; six utterances back to back
+stayed at 59–60 ms while the SoC warmed from 57 to 67 °C. Peak resident memory 160 MB; loading the model from the SD
+card takes about 2.5 s. The output is bit-identical to the x86-64 and Android builds. A Pi Zero 2 W is the floor for
+real time; a Pi 4 or Pi 5 has several times the margin.
+
 ## Python
 
 `bindings/python/` is a pyo3 extension (`linnet_tts._native`, abi3 for CPython >= 3.9) plus a thin
