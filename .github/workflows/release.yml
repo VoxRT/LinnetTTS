@@ -5,6 +5,9 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  # Rehearsal: builds every artefact from the current branch and checks Package.swift against the draft release,
+  # without publishing anything (the pypi and release jobs run only for a tag push).
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -23,8 +26,8 @@ jobs:
       - id: v
         run: |
           VERSION=$(sed -n 's/^version *= *"\([^"]*\)".*/\1/p' runtime/linnet-tts/Cargo.toml | head -1)
-          echo "crate version $VERSION, tag $GITHUB_REF_NAME"
-          test "v$VERSION" = "$GITHUB_REF_NAME"
+          echo "crate version $VERSION, ref $GITHUB_REF_NAME"
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then test "v$VERSION" = "$GITHUB_REF_NAME"; fi
           grep -q "^## \[$VERSION\]" CHANGELOG.md
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
@@ -152,6 +155,7 @@ jobs:
 
   pypi:
     name: Publish wheels to PyPI
+    if: github.event_name == 'push'
     needs: [check-version, wheels]
     runs-on: ubuntu-latest
     # Trusted publishing (OIDC): the PyPI project "linnet-tts" lists this repository, this workflow file and the
@@ -174,6 +178,7 @@ jobs:
 
   release:
     name: GitHub release
+    if: github.event_name == 'push'
     needs: [check-version, wheels, linux-c, android, ios, pypi]
     runs-on: ubuntu-latest
     steps:
