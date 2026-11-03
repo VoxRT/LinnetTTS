@@ -1,7 +1,5 @@
 # Linnet Weights License, version 1.0
 
-Draft for approval by Wiseport Ltd.; this line is removed when the text is final. Until then no Licensed Assets are distributed.
-
 Copyright (c) 2026 Wiseport Ltd. (trading as VoxRT).
 
 This license governs the Linnet model weights, tokenizer and voice files published by Wiseport Ltd., trading as VoxRT ("the

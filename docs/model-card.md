@@ -1,6 +1,4 @@
-# Model card: `linnet-en-35m` (draft)
-
-> Draft for review. Open before publication: the final weights license text.
+# Model card: `linnet-en-35m`
 
 ## Summary
 
