@@ -85,6 +85,24 @@ flow LM 31.5 M including the 3.1 M text table, decoder 9.9 M); the fp16 weights 
    `tests/goldens/ref`; `python tools/make_goldens.py --weights local/linnet-en-35m.safetensors --tokenizer
    local/tokenizer.model --voice local/voices/linnet-en-f1.npy` regenerates `tests/goldens/{hello,meeting}`.
 
+## Performance
+
+Rust runtime, fp16 weights, one step = 80 ms of audio (an LM step plus two decoder frames). Measured without real-time pacing;
+the audio is bit-identical for every thread count and across all these devices.
+
+| device | threads | per step | real-time factor |
+|---|---|---|---|
+| Apple M5 (macOS) | 1 | 3.3 ms | 5 % |
+| iPhone 13 Pro Max, A15 | 1 (auto) / 2 | 5.5 / 4.6 ms | 8.3 / 6.6 % |
+| iPhone 11, A13 | 1 (auto) | 6.7–7.1 ms | 9 % |
+| desktop x86-64, AVX2 | 1 | 8.8 ms | 11 % |
+| Snapdragon 662 (Redmi 9T), Cortex-A73 | 1 / 4 (auto) | 42.4 / 14.3 ms | 62 / 21 % |
+| Raspberry Pi Zero 2 W, Cortex-A53 1 GHz | 1 / 4 (auto) | 158 / 59–60 ms | 242 / 88 % |
+
+First audio arrives 50–120 ms after the text on the phones and about 250 ms on the Snapdragon 662 (the prime pass plus one step).
+Peak memory is about 160 MB on Linux. Details, the in-app numbers and the effect of playback pacing: `docs/model-card.md`
+("Performance") and `bindings/README.md` ("Threads", "Playback and step time").
+
 ## Weights
 
 Model weights are not in this repository and are not bundled in any package. Download them from the GitHub release
