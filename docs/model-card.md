@@ -6,8 +6,9 @@
 
 Linnet is a lightweight on-device text-to-speech model: an autoregressive flow language model that emits one continuous 48-dimensional
 latent per 80 ms step (two 24-dimensional codec frames at 25 Hz) with a single flow evaluation per step, followed by a Vocos-style neural
-codec decoder that turns latents into 24 kHz audio. The model speaks English, clones a voice from a short prompt (as voice latents produced
-by a separate encoder that is not part of this release), streams audio from the first step, and runs in real time on a single CPU core.
+codec decoder that turns latents into 24 kHz audio. The model speaks English in a voice given as a voice-prompt latent,
+streams audio from the first step, and runs in real time on a single CPU core. It ships with two built-in voices; the encoder that produces
+latents from recordings is not part of this release, and creating new voices requires a separate license (see `WEIGHTS_LICENSE.md`).
 
 | | |
 |---|---|
@@ -55,8 +56,8 @@ redistributed with this model. The copyright of the recordings remains with thei
 | Thorsten-Voice TV-44kHz-Full | de | 39 | CC0 1.0 | [Thorsten-Voice/TV-44kHz-Full](https://huggingface.co/datasets/Thorsten-Voice/TV-44kHz-Full) |
 | Crowdsourced Latin American Spanish | es | 36 | CC BY-SA 4.0 | [OpenSLR 61, 71–75](https://www.openslr.org/61/) |
 | Vibravox (speech_clean, headset) | fr | 31 | CC BY 4.0 | [Cnam-LMSSC/vibravox](https://huggingface.co/datasets/Cnam-LMSSC/vibravox) |
-| Dialogs (Langswap) | ru | 17 | OpenRAIL (commercial use permitted; use restrictions carried into the weights license) | [langswap/dialogs-ru-emotional-conversations](https://huggingface.co/datasets/langswap/dialogs-ru-emotional-conversations) |
 | SIWIS French Speech Synthesis Database | fr | 11 | CC BY 4.0 | [Edinburgh DataShare](https://datashare.ed.ac.uk/handle/10283/2353) |
+| Other public speech data | ru | 17 | commercial use permitted | — |
 
 **Flow LM** (this release): 6 012 hours of English speech with word-level alignments.
 
@@ -73,8 +74,6 @@ Notes on specific licenses:
 
 - *CC BY-SA 4.0* (Latin American Spanish, 0.6 % of the codec data): whether trained weights are an "adaptation" under ShareAlike is legally unsettled.
   The set is credited here; the weights are published under the Linnet weights license.
-- *OpenRAIL* (Dialogs, 0.3 % of the codec data): the license requires that derivative models carry its use restrictions; they are reproduced in
-  `WEIGHTS_LICENSE.md`.
 - *YouTube-derived corpora* (Emilia-YODAS, YO-CPT-ru): the CC BY licenses were declared by the video authors and collected by the corpus authors,
   who honour removal requests.
 
@@ -131,11 +130,16 @@ The voices may be used as product voices under `WEIGHTS_LICENSE.md`. Because the
 - English only; other languages produce garbage.
 - Numbers, dates, currencies, phone numbers, version strings: the model reads written-out words reliably, raw digit formats only sometimes
   (for example "1359" or "$19.99" are often misread). Normalise text to words before synthesis.
-- Voice prompts: 5 s of clean speech, peak-normalised to −3 dBFS, from one speaker; the voice encoder is not included. Short or spontaneous
-  prompts can drift in timbre; prompts with strong room acoustics or noise degrade the clone.
+- Voice latents: the model is conditioned on a latent of about 5 s of clean speech from one speaker, peak-normalised to −3 dBFS; short or
+  spontaneous prompts drift in timbre, and room acoustics or noise degrade the voice. This describes the model's behaviour, not a permission:
+  the standard license allows only the built-in voices and voices VoxRT has expressly authorised in writing.
 - Audio quality: a slight roughness is audible on headphones in some utterances; not audible on laptop speakers.
-- The model may be used to synthesise speech in the shipped voices or in voices you have the right to clone. See `WEIGHTS_LICENSE.md` for the
-  limits on voice-cloning services. Do not use it to impersonate people without their consent.
+- Under the standard license the model may be used with the built-in voices and with voices VoxRT has expressly authorised in writing.
+  Cloning any voice (including your own, with consent), designing new voices, fine-tuning the weights or saving modified, quantised or
+  converted copies of them, training models with the weights or their output, and offering general-purpose text-to-speech to others as an
+  API or service, free or paid, require a separate written license (help@voxrt.com). It may not be used to impersonate a real person
+  deceptively or to present its output as a genuine recording. See `WEIGHTS_LICENSE.md`.
+- Not designed or certified as the sole means of conveying safety-critical or emergency information; see `WEIGHTS_LICENSE.md`, Section 10.
 
 ## Versioning
 

@@ -10,9 +10,19 @@ with a Vocos-style decoder. ~41M parameters end to end (31.5M LM + 9.9M decoder)
 - `tests/goldens/` — shared golden vectors; Python and Rust must agree on them.
 - `docs/` — model card, weight container format, streaming contract.
 
-Code is licensed under Apache-2.0 (see `LICENSE`). Model weights are distributed separately under the Linnet Weights License
-(see `WEIGHTS_LICENSE.md`); the codec encoder used for voice cloning is not part of this release. The test fixtures in `tests/goldens/` include
-copies of the two built-in voices; `tests/goldens/NOTICE.md` states their license and the permission to redistribute them with the repository.
+Code is licensed under Apache-2.0 (see `LICENSE`). The model weights, tokenizer and voice files are distributed separately
+under the Linnet Weights License (see `WEIGHTS_LICENSE.md`), which is not an open-source license. In short:
+
+- **Free, including commercially:** running the unmodified weights with the built-in voices inside your own products, on
+  devices and on servers, including paid and closed-source products; shipping the unmodified weights as part of your
+  product; selling audio you generate.
+- **Requires a separate written license from VoxRT** (help@voxrt.com): creating or cloning voices (including your own);
+  fine-tuning the weights or saving modified, quantised or converted copies of them (converting or quantising in memory at
+  load time is allowed); training any model with the weights or their output; offering general-purpose text-to-speech to
+  others as an API or service, free or paid; and publishing the weights outside your product.
+
+The license text governs; this summary does not. The test fixtures in `tests/goldens/` include copies of the two built-in
+voices; `tests/goldens/NOTICE.md` states their license and the permission to redistribute them with the repository.
 
 The model is called `linnet-en-35m` after its roughly 35 M parameters outside the 6001×512 text token table (41.4 M in total:
 flow LM 31.5 M including the 3.1 M text table, decoder 9.9 M); the fp16 weights file is 83 MB.
@@ -120,6 +130,7 @@ Model weights are not in this repository and are not bundled in any package. Dow
 
 The runtime needs three files: the fp16 weights, `tokenizer.model` and one voice `.npy`. Check `SHA256SUMS` after
 downloading. The weights are licensed under the Linnet Weights License (`WEIGHTS_LICENSE.md`), not under Apache-2.0.
+Products that ship or use them show the notices in Section 8 of that license.
 The weight container is documented in `docs/weights-format.md`.
 
 ## Versioning
