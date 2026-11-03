@@ -99,10 +99,10 @@ in the generated audio itself.
 
 ## 7. Built-in voices
 
-The Voice Files are provided for use as product voices under this license. The persons whose voices they represent have consented
-to this use. You may not use the Voice Files or Outputs made with them to suggest that these persons endorse Your product, to
-impersonate them, or to create recordings presented as their own words. The model card lists the attribution to be shown for each
-voice.
+The Voice Files are provided for use as product voices under this license. The built-in voices of the first release are synthetic
+voices designed from text descriptions; they do not reproduce any real person. Where a future release includes a voice derived from a
+real person, the model card will say so and that person will have consented to this use. You may not use the Voice Files or Outputs
+made with them to suggest an endorsement by any person or organisation, or to present Outputs as recordings of a real person.
 
 ## 8. No warranty
 

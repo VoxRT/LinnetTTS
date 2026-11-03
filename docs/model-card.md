@@ -1,6 +1,6 @@
 # Model card: `linnet-en-35m` (draft)
 
-> Draft for review. Open before publication: the final weights license text and the artists' credits for the built-in voices.
+> Draft for review. Open before publication: the final weights license text.
 
 ## Summary
 
@@ -113,15 +113,16 @@ Measured without real-time pacing; when synthesis is paced to playback, mobile p
 
 ## Built-in voices
 
-| voice | file | sex | prompt | source |
-|---|---|---|---|---|
-| `linnet-en-f1` | `voices/linnet-en-f1.npy` (109 × 48) | female | 8.6 s | recording of a professional voice artist working with VoxRT |
-| `linnet-en-m1` | `voices/linnet-en-m1.npy` (84 × 48) | male | 6.7 s | recording of a professional voice artist working with VoxRT |
+Both built-in voices are synthetic: they were designed from a text description with Qwen3-TTS-12Hz-1.7B-VoiceDesign (Apache-2.0,
+no restrictions on outputs), so they are not clones of any real person. A 6 s utterance of each designed voice was resampled to 24 kHz,
+peak-normalised to −3 dBFS and encoded into the voice latent that ships here; no denoising was applied.
 
-Both artists gave written consent to the cloning of their voices and to the distribution of the voice latents under the Linnet Weights
-License. Credits: to be added before publication (name or pseudonym, as each artist chooses). The voices may be used as product voices;
-they may not be presented as the artists themselves or as their endorsement (`WEIGHTS_LICENSE.md`, Section 7). The prompts were cut from
-spoken-video recordings (AAC 48 kHz), resampled to 24 kHz and peak-normalised to −3 dBFS; no denoising was applied.
+| voice | file | description used for the design |
+|---|---|---|
+| `linnet-en-f1` | `voices/linnet-en-f1.npy` (76 × 48) | a bright, confident female voice in her late twenties, American accent, natural energy, news-presenter clarity |
+| `linnet-en-m1` | `voices/linnet-en-m1.npy` (76 × 48) | a deep, intense male voice with an American accent, documentary narrator, calm and authoritative |
+
+The voices may be used as product voices under `WEIGHTS_LICENSE.md`. Because they are synthetic, no voice-performer credit applies.
 
 ## Intended use and limitations
 
