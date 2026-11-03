@@ -11,7 +11,7 @@ concatenate bit-for-bit to the offline result.
 | Python | `python/` | wheel `linnet-tts` (import `linnet_tts`), abi3 cp39+ | ready |
 | Android | `android/` | AAR `com.voxrt.linnet:linnet-tts` (Kotlin API, JNI in Rust), arm64-v8a + x86_64 | ready (publishing TODO) |
 | iOS | `ios/` | `LinnetTTS.xcframework` (static, ios-arm64 + simulator + macos-arm64) + Swift package `LinnetTTS` | ready (publishing TODO) |
-| Browser | `browser/` | WASM (SIMD128) + npm package | not planned for this release |
+| Browser | — | WASM (SIMD128) + npm package | not planned for this release |
 
 Model weights (`linnet-en-35m.fp16.safetensors`, `tokenizer.model`) and voice files are not part of any
 channel; see `WEIGHTS_LICENSE.md`.
@@ -29,13 +29,19 @@ model owns one persistent worker pool; the parameter of a session (`SynthParams.
 with every reduction kept on one thread, so **the audio is bit-identical for every thread count**; only the
 speed changes (see `docs/streaming-contract.md`).
 
+On Android the runtime also pins its threads to the big cluster: the pool workers for good, and the thread that calls
+`prime`, `step` or `decode` only for the duration of that call (its previous affinity mask is restored afterwards).
+Without this the scheduler keeps the short bursts of a synthesis on the little cores and migrates them up slowly; the
+same sample app on a Snapdragon 662 measured 22-33 ms per step before and 16-18 ms after (14.5 ms for the pinned
+command-line build). Nothing is pinned on a device whose cores are all alike, and nothing is pinned on iOS or Linux.
+
 ## Playback and step time
 
 Synthesis is far faster than real time, so the player helpers (`LinnetPlayer` on iOS, `AudioTrackPlayer` on Android)
 queue 8 s of audio ahead by default: an utterance is produced in one burst at full clock and playback drains behind
 it. Pacing synthesis to real time with a small queue makes every step 3-4 times slower (the core is clocked down and
 the work moved to efficiency cores while the thread sleeps between steps) without improving latency to the first
-chunk. Measure throughput without pacing; the sample apps' `-nopace`/`-noaudio` flags exist for that.
+chunk. Measure throughput without pacing; the iOS sample app's `-nopace`/`-noaudio` flags exist for that.
 
 ## Linux C
 
@@ -92,8 +98,8 @@ for chunk in session:                                 # np.float32 chunks, 80 ms
 
 `Model.sample_rate`, `Model.samples_per_step`, `Model.output_delay`, `Model.tokenize`, `Model.decode`,
 `Session.step() -> Optional[np.ndarray]`, `Session.latent()`, `Session.frames`, `Session.finished`.
-Long calls release the GIL. Tests: `pytest bindings/python/tests` (needs the model assets, see
-`bindings/python/README.md`). For a manylinux wheel build on a modern host use
+Long calls release the GIL. Tests: `pytest bindings/python/tests` (needs the model assets under `../../local/`
+or `LINNET_ASSETS`; `local/` = the unpacked weights release, see the root README and `bindings/python/README.md`). For a manylinux wheel build on a modern host use
 `maturin build --release --manylinux 2_17 --zig` (needs zig) or build inside a manylinux container.
 
 The PyTorch reference package lives in `python/` as `linnet_tts_torch` (pip `linnet-tts-torch`); the two do

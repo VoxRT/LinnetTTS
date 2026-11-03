@@ -4,7 +4,7 @@
     python tools/make_goldens.py --weights W.safetensors --tokenizer sp.model --voice voice.npy [--out tests/goldens]
 
 Each case directory holds:
-    meta.json     text, token ids, sampling parameters, counts
+    meta.json     text, token ids, sampling parameters, counts, the voice file used
     noise.bin     [n_noise, 48] f32: the scaled Gaussian draws, one per LM step (the step
                   on which end-of-speech fired included), so another implementation can
                   inject the same noise instead of its own generator
@@ -47,6 +47,11 @@ def main() -> None:
     lin = Linnet.from_files(args.weights, args.tokenizer)
     voice = Linnet.load_voice(args.voice)
     out_root = Path(args.out)
+    # Recorded relative to the unpacked weights release (`local/` at the repository root),
+    # e.g. "voices/linnet-en-f1.npy"; the bare file name when the voice lives elsewhere.
+    voice_path = Path(args.voice).resolve()
+    local_dir = Path(__file__).resolve().parents[1] / "local"
+    voice_name = voice_path.relative_to(local_dir).as_posix() if voice_path.is_relative_to(local_dir) else voice_path.name
 
     for name, text, seed in CASES:
         tokens = lin.tokenizer.encode(text)
@@ -89,6 +94,7 @@ def main() -> None:
         wav.numpy().astype("<f4").tofile(d / "wav.bin")
         meta = {
             "text": text,
+            "voice": voice_name,
             "tokens": tokens,
             "temp": TEMP,
             "cfg": CFG,

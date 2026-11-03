@@ -80,7 +80,7 @@ echo "sdk.dir=/path/to/Android/Sdk" > local.properties   # or export ANDROID_HOM
 
 `build-native.sh` runs `cargo ndk --platform 24 -t <abi> build --release` (fat LTO, stripped) and removes the
 runtime's own cdylib that cargo-ndk copies alongside; the Gradle build fails with a pointer to the script when
-the `.so` files are missing. Native library sizes (0.0.1): arm64-v8a 680 KB, x86_64 786 KB. Nothing but
+the `.so` files are missing. Native library sizes (measured on 0.0.1; unchanged in 0.1.0): arm64-v8a 680 KB, x86_64 786 KB. Nothing but
 `libc`, `libm` and `libdl` is required at run time; minSdk 24.
 
 The runtime's release profile (fat LTO, one codegen unit) applies to these builds too. No `target-cpu` is set:
@@ -126,14 +126,21 @@ repository are missing).
 `AudioTrackPlayer` from a background thread and prints prime time, time to first chunk, worst step and the
 synthesis RTF), Stop. It reads the three model files from the app's private `filesDir`; weights are not bundled.
 
+The commands below read the model files from `../../local/` (`local/` = the unpacked weights release, see the
+root README):
+
 ```sh
 ./gradlew :sample:installDebug
 adb push ../../local/linnet-en-35m.fp16.safetensors ../../local/tokenizer.model /data/local/tmp/
-adb push ../../local/voice_hifitts2_val0.npy /data/local/tmp/voice.npy
+adb push ../../local/voices/linnet-en-f1.npy /data/local/tmp/voice.npy
 adb shell run-as com.voxrt.linnet.sample sh -c 'mkdir -p files && cp /data/local/tmp/linnet-en-35m.fp16.safetensors /data/local/tmp/tokenizer.model /data/local/tmp/voice.npy files/'
 ```
 
 (`run-as` works for the debug build. Model files are distributed separately, see `WEIGHTS_LICENSE.md`.)
+
+Sample app on a Snapdragon 662 (Redmi 9T), 7.0 s sentence, `threads` auto (4 big cores), playback on: 15.9-18.4 ms per step (RTF 20-23 %),
+worst step 33-39 ms, first chunk 244-260 ms after the Speak tap; the big-core affinity of the pool (see `bindings/README.md`, "Threads") is
+what brings the app close to the 14.5 ms of the command-line build.
 
 ## Tests
 
@@ -147,6 +154,6 @@ adb shell run-as com.voxrt.linnet.sample sh -c 'mkdir -p files && cp /data/local
 ```sh
 adb shell mkdir -p /data/local/tmp/linnet
 adb push ../../local/linnet-en-35m.fp16.safetensors ../../local/tokenizer.model /data/local/tmp/linnet/
-adb push ../../local/voice_hifitts2_val0.npy /data/local/tmp/linnet/voice.npy
+adb push ../../local/voices/linnet-en-f1.npy /data/local/tmp/linnet/voice.npy
 ./gradlew :linnet-tts:connectedDebugAndroidTest
 ```

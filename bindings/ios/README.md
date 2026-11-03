@@ -48,8 +48,8 @@ sessions. A `LinnetSession` is single-threaded: drive it from one queue at a tim
 same model may run concurrently. `threads` selects the worker count of the model's persistent pool (1 =
 single-threaded, 0 = automatic: the performance cores, at most 4); `SynthParams.threads` applies it when a
 session is created. The audio is bit-identical for every thread count. Change it between utterances, not while
-a session steps. `LinnetPlayer.write` blocks while more than `bufferMillis` (default 400 ms) of audio is queued,
-which paces synthesis to real time; `stop()` may be called from any thread.
+a session steps. `LinnetPlayer.write` blocks while more than `bufferMillis` (default 8000 ms) of audio is queued,
+which paces synthesis to real time when the queue is small; `stop()` may be called from any thread.
 
 **Memory.** The fp16 model is about 70 MB in RAM; a session adds a few MB (KV caches sized by `maxFrames`).
 The static library adds about 2 MB to an arm64 app binary.
@@ -84,7 +84,7 @@ dist/LinnetTTS.xcframework.zip            + .sha256 and .checksum (swift package
 LinnetTTS/LinnetTTS.xcframework           copy for the package's local binary target
 ```
 
-Slice sizes (0.0.1, stripped): ios-arm64 12.6 MB, simulator 25 MB (two architectures), macos-arm64 12.8 MB; zip
+Slice sizes (stripped; measured on 0.0.1, unchanged in 0.1.0): ios-arm64 12.6 MB, simulator 25 MB (two architectures), macos-arm64 12.8 MB; zip
 about 20 MB. Deployment targets: iOS 15, macOS 12 (`IPHONEOS_DEPLOYMENT_TARGET` / `MACOSX_DEPLOYMENT_TARGET`
 override them). The macOS slice exists so that `swift build` / `swift test` work on an Apple-silicon host; it is
 not a supported product.
@@ -95,7 +95,7 @@ Local: add `bindings/ios/LinnetTTS` as a package dependency (File > Add Package 
 `Package.swift`: `.package(path: "../LinnetTTS")` and `.product(name: "LinnetTTS", package: "LinnetTTS")`. The
 sample does exactly this through `XCLocalSwiftPackageReference`.
 
-Release: `Package.swift` carries the URL form in a comment; publish `dist/LinnetTTS.xcframework.zip` as a GitHub
+Release: the root `Package.swift` carries the URL form; publish `dist/LinnetTTS.xcframework.zip` as a GitHub
 release asset, put its `dist/LinnetTTS.xcframework.checksum` into
 `.binaryTarget(name: "CLinnetTTS", url: ..., checksum: ...)`, and tag the repository so that
 `https://github.com/VoxRT/LinnetTTS` can be added by URL. TODO: not published yet.
@@ -114,7 +114,8 @@ Documents directory; weights are not bundled. `UIFileSharingEnabled` and `LSSupp
 on, so the folder is visible in Finder (device > Files tab, drag the files onto the app), in the Files app and
 in Xcode (Window > Devices and Simulators > the app > Download/Replace Container).
 
-Simulator:
+Simulator (the model files are copied from `../../local/`; `local/` = the unpacked weights release, see the root
+README):
 
 ```sh
 cd bindings/ios/Sample
@@ -123,7 +124,7 @@ xcrun simctl boot "iPhone 17 Pro"
 xcrun simctl install booted <DerivedData>/Build/Products/Release-iphonesimulator/LinnetSample.app
 C=$(xcrun simctl get_app_container booted com.voxrt.linnet.sample data)
 cp ../../local/linnet-en-35m.fp16.safetensors ../../local/tokenizer.model "$C/Documents/"
-cp ../../local/voice_hifitts2_val0.npy "$C/Documents/voice.npy"
+cp ../../local/voices/linnet-en-f1.npy "$C/Documents/voice.npy"
 xcrun simctl launch --console-pty booted com.voxrt.linnet.sample -autospeak "Hello there." -repeat 3
 ```
 
@@ -153,17 +154,17 @@ TEST_RUNNER_LINNET_ASSETS=$PWD/../../../local xcodebuild test -scheme LinnetTTS 
 
 A Swift package test bundle cannot run on a physical device by itself ("tool-hosted testing is unavailable on
 device destinations"), so the same test file is also compiled into `LinnetSampleTests`, hosted by the sample
-app, with `Tests/LinnetTTSTests/Assets/` copied in as a resource folder (`device-smoke.sh tests` does the copy
+app, with `LinnetTTS/Tests/LinnetTTSTests/Assets/` copied in as a resource folder (`device-smoke.sh tests` does the copy
 and the run; the files are ignored by git).
 
-Results (0.0.1): all tests pass on the macOS host (Apple M5) and on the iPhone 17 Pro simulator, both as the
+Results (measured on 0.0.1; unchanged in 0.1.0): all tests pass on the macOS host (Apple M5) and on the iPhone 17 Pro simulator, both as the
 package tests and as `LinnetSampleTests`; the audio MD5 is identical everywhere, for every thread count. Host
 timings (release, 67-step sentence): threads 1 mean 3.3 ms per step (RTF 5 %), threads 4 mean 3.7-4.7 ms (the
 per-step work is too small on an M5 for the pool to pay off). The simulator runs on the same host CPU and gives
 the same numbers in a Release test host; it does not predict a phone. Device runs: `device-smoke.sh` (needs an
 unlocked login keychain on the Mac for `codesign`).
 
-Device results (0.0.1, iPhone 13 Pro Max, A15, iOS 27, hosted `LinnetSampleTests`, release): all 6 tests pass; the audio
+Device results (measured on 0.0.1, unchanged in 0.1.0; iPhone 13 Pro Max, A15, iOS 27, hosted `LinnetSampleTests`, release): all 6 tests pass; the audio
 MD5s equal the macOS host and simulator values for every thread count (same NEON kernels, thread-count independent
 result). Timings on the 67-step sentence (5.44 s of audio): threads 1 — prime 79 ms, first chunk 85 ms, mean step
 5.50 ms (worst 6.0), RTF 8.3 %; threads 0 (auto = 2 performance cores) — prime 46 ms, first chunk 51 ms, mean step
@@ -172,13 +173,13 @@ efficiency cores hurts badly, which is why `auto` is capped at the performance-c
 with `auto`: 333 steps, 26.6 s of audio in 3.9 s (RTF 14.6 %, includes ten primes and sustained-load scheduling).
 Recommended default on iOS: `threads = 0`, which the runtime resolves to one thread on Apple platforms (see below).
 
-Step time under real-time pacing: when the sample paces synthesis to playback (the player blocks once 400 ms of
-audio is queued), the CPU idles about 75 ms of every 80 ms step and iOS lowers the core clock and moves the
+Step time under real-time pacing: when the sample paces synthesis to playback (`-bufferms 400`: the player blocks
+once 400 ms of audio is queued), the CPU idles about 75 ms of every 80 ms step and iOS lowers the core clock and moves the
 short bursts to efficiency cores; the same A15 then shows 23 ms per step instead of 5.5 ms. This is power
 management, not runtime cost: `-noaudio` or `-nopace` (synthesis never blocks on the player) restores 5.4 ms
 with the audio engine running and the UI updating. Measure throughput without pacing; for the tightest
-real-time margin on slow phones, synthesize in bursts with a larger queue (`LinnetPlayer(bufferMillis:)`, 1–2 s)
-so the core runs at full clock and then sleeps. `device-pace-experiment.sh` runs these modes on a device.
+real-time margin on slow phones, synthesize in bursts with a large queue (`LinnetPlayer(bufferMillis:)`; the default
+of 8 s, also the sample's default, does this) so the core runs at full clock and then sleeps. `device-pace-experiment.sh` runs these modes on a device.
 
 Baseline device (iPhone 11, A13, iOS 26, sample app, 80-step sentence): threads 1 — prime 97–106 ms, first chunk
 107–116 ms, mean step 7.1 ms (worst 9.6) without pacing; threads 2 (auto) — prime 61–74 ms, first chunk 72–86 ms,

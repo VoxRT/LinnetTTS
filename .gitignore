@@ -1,6 +1,8 @@
 __pycache__/
 *.pyc
 .venv/
+python/build/
+*.egg-info/
 target/
 *.safetensors
 *.linnet

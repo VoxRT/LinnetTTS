@@ -13,7 +13,7 @@ ASSETS = pathlib.Path(os.environ.get("LINNET_ASSETS", pathlib.Path(__file__).res
 WEIGHTS_FP16 = ASSETS / "linnet-en-35m.fp16.safetensors"
 WEIGHTS_FP32 = ASSETS / "linnet-en-35m.safetensors"
 TOKENIZER = ASSETS / "tokenizer.model"
-VOICE = ASSETS / "voice_hifitts2_val0.npy"
+VOICE = ASSETS / "voices" / "linnet-en-f1.npy"
 
 pytestmark = pytest.mark.skipif(
     not (WEIGHTS_FP16.exists() and TOKENIZER.exists() and VOICE.exists()),

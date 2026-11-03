@@ -168,6 +168,7 @@ impl Linnet {
     /// `T · samples_per_step` samples with the output delay compensated
     /// (first `output_delay` samples dropped, as many zeros appended).
     pub fn decode(&self, latents: &[f32]) -> Result<Vec<f32>> {
+        let _big = crate::pool::affinity::BigCoreGuard::enter();
         if latents.is_empty() {
             return Ok(Vec::new());
         }
@@ -280,6 +281,7 @@ impl<'m> Session<'m> {
 
     /// Like [`Session::prime`] with ready-made token ids.
     pub fn prime_tokens(&mut self, tokens: &[u32]) -> Result<()> {
+        let _big = crate::pool::affinity::BigCoreGuard::enter();
         let lm = &self.model.lm;
         let d = self.model.cfg.lm.d_model;
         let ld = self.model.cfg.lm.latent_dim;
@@ -374,6 +376,7 @@ impl<'m> Session<'m> {
     }
 
     fn advance(&mut self) -> Option<&[f32]> {
+        let _big = crate::pool::affinity::BigCoreGuard::enter();
         let model = self.model;
         let lm = &model.lm;
         let d = model.cfg.lm.d_model;

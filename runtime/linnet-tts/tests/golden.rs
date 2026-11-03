@@ -3,10 +3,14 @@
 //! two short utterances. The fp32 weights must reproduce them to 1e-4;
 //! the fp16 export is allowed to drift (reported, bounded loosely).
 //!
-//! Inputs are looked up under `local/` of the repository and may be
-//! overridden with `LINNET_WEIGHTS`, `LINNET_WEIGHTS_FP16`,
-//! `LINNET_TOKENIZER`, `LINNET_VOICE`. Missing files skip the test with a
-//! visible message instead of failing.
+//! Inputs are looked up under `local/` of the repository (the unpacked
+//! weights release: `linnet-en-35m.safetensors`, `linnet-en-35m.fp16.safetensors`,
+//! `tokenizer.model`, `voices/linnet-en-f1.npy`) and may be overridden with
+//! `LINNET_WEIGHTS`, `LINNET_WEIGHTS_FP16`, `LINNET_TOKENIZER`, `LINNET_VOICE`.
+//! A missing file skips the test instead of failing it and prints a
+//! `SKIPPED: ...` line on stderr; the test harness hides that output for
+//! passing tests, so run `cargo test -- --nocapture` to see whether the
+//! goldens were actually checked.
 
 use std::path::{Path, PathBuf};
 
@@ -21,7 +25,9 @@ fn input(env: &str, default_rel: &str) -> Option<PathBuf> {
     if p.exists() {
         Some(p)
     } else {
-        eprintln!("SKIPPED: {} not found (set {env})", p.display());
+        // Visible only with `cargo test -- --nocapture`: the harness captures
+        // stderr of passing tests.
+        eprintln!("SKIPPED: {} not found (set {env}); run with -- --nocapture to see this", p.display());
         None
     }
 }
@@ -36,7 +42,7 @@ fn tokenizer() -> Option<PathBuf> {
     input("LINNET_TOKENIZER", "local/tokenizer.model")
 }
 fn voice() -> Option<PathBuf> {
-    input("LINNET_VOICE", "local/voice_hifitts2_val0.npy")
+    input("LINNET_VOICE", "local/voices/linnet-en-f1.npy")
 }
 
 struct Golden {

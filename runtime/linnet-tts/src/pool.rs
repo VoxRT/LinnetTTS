@@ -105,6 +105,8 @@ fn spawn_workers(_shared: &Arc<Shared>, _threads: usize) -> Vec<std::thread::Joi
 
 #[cfg(not(target_arch = "wasm32"))]
 fn worker(sh: Arc<Shared>) {
+    #[cfg(target_os = "android")]
+    affinity::pin_current_to_big_cores();
     let mut idle_since: Option<Instant> = None;
     loop {
         if sh.stop.load(Acquire) {
@@ -266,6 +268,13 @@ pub fn auto_threads() -> usize {
 
 #[cfg(any(target_os = "linux", target_os = "android"))]
 fn big_cores_sysfs() -> Option<usize> {
+    big_core_list().map(|l| l.len())
+}
+
+/// Indices of the cores whose `cpuinfo_max_freq` equals the highest one, in
+/// order; `None` when sysfs has no cpufreq data at all.
+#[cfg(any(target_os = "linux", target_os = "android"))]
+fn big_core_list() -> Option<Vec<usize>> {
     let mut freqs = Vec::new();
     for i in 0..256 {
         let dir = format!("/sys/devices/system/cpu/cpu{i}");
@@ -279,7 +288,95 @@ fn big_cores_sysfs() -> Option<usize> {
         }
     }
     let max = *freqs.iter().max()?;
-    Some(freqs.iter().filter(|&&f| f == max).count())
+    Some(freqs.iter().enumerate().filter(|(_, &f)| f == max).map(|(i, _)| i).collect())
+}
+
+/// Big-core affinity (Android only). The scheduler places the short bursts
+/// of a paced synthesis on the little cores and migrates them up slowly: on
+/// a Snapdragon 662 a step measured 22-33 ms inside an app against 14.5 ms
+/// for the same code pinned to the big cluster. Workers pin themselves when
+/// they start; the calling thread is pinned only for the duration of a
+/// `prime`, `step` or `decode` call through [`BigCoreGuard`] and gets its
+/// previous mask back afterwards. Nothing happens when the cores are all
+/// alike or when sysfs has no cpufreq data.
+#[cfg(target_os = "android")]
+pub(crate) mod affinity {
+    use std::sync::OnceLock;
+
+    const SET_BYTES: usize = 128; // cpu_set_t on bionic and glibc: 1024 bits
+
+    extern "C" {
+        fn sched_setaffinity(pid: i32, size: usize, mask: *const u8) -> i32;
+        fn sched_getaffinity(pid: i32, size: usize, mask: *mut u8) -> i32;
+    }
+
+    /// Mask of the big cores, or `None` when pinning would change nothing.
+    fn big_mask() -> Option<&'static [u8; SET_BYTES]> {
+        static MASK: OnceLock<Option<[u8; SET_BYTES]>> = OnceLock::new();
+        MASK.get_or_init(|| {
+            let list = super::big_core_list()?;
+            let total = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(0);
+            if list.is_empty() || list.len() >= total || list.iter().any(|&i| i >= SET_BYTES * 8) {
+                return None;
+            }
+            let mut m = [0u8; SET_BYTES];
+            for &i in &list {
+                m[i / 8] |= 1 << (i % 8);
+            }
+            Some(m)
+        })
+        .as_ref()
+    }
+
+    /// Pin the current thread to the big cores for good (workers).
+    pub(crate) fn pin_current_to_big_cores() {
+        if let Some(m) = big_mask() {
+            // SAFETY: a correctly sized mask for the calling thread (pid 0).
+            unsafe { sched_setaffinity(0, SET_BYTES, m.as_ptr()) };
+        }
+    }
+
+    /// Pins the calling thread to the big cores while alive and restores
+    /// the previous mask on drop. A no-op when there is nothing to pin.
+    pub(crate) struct BigCoreGuard {
+        saved: Option<[u8; SET_BYTES]>,
+    }
+
+    impl BigCoreGuard {
+        pub(crate) fn enter() -> Self {
+            let Some(m) = big_mask() else { return BigCoreGuard { saved: None } };
+            let mut saved = [0u8; SET_BYTES];
+            // SAFETY: correctly sized buffers; pid 0 is the calling thread.
+            let ok = unsafe { sched_getaffinity(0, SET_BYTES, saved.as_mut_ptr()) == 0 };
+            if !ok || saved == *m {
+                return BigCoreGuard { saved: None };
+            }
+            // SAFETY: as above.
+            let rc = unsafe { sched_setaffinity(0, SET_BYTES, m.as_ptr()) };
+            BigCoreGuard { saved: (rc == 0).then_some(saved) }
+        }
+    }
+
+    impl Drop for BigCoreGuard {
+        fn drop(&mut self) {
+            if let Some(s) = self.saved {
+                // SAFETY: restoring the mask read above for the same thread.
+                unsafe { sched_setaffinity(0, SET_BYTES, s.as_ptr()) };
+            }
+        }
+    }
+}
+
+/// Zero-cost stand-in for [`affinity::BigCoreGuard`] where no pinning is done.
+#[cfg(not(target_os = "android"))]
+pub(crate) mod affinity {
+    pub(crate) struct BigCoreGuard;
+    impl BigCoreGuard {
+        #[inline]
+        pub(crate) fn enter() -> Self {
+            BigCoreGuard
+        }
+    }
 }
 
 /// Number of performance cores reported by the kernel (Apple platforms); `None` when unavailable.

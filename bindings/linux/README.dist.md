@@ -40,8 +40,9 @@ Parameters (`linnet_params`, pass NULL for defaults): `temp` 0.3, `cfg` 2.0, `eo
 ## Link
 
 ```sh
-cc -O2 -Iinclude synth.c -Llib -llinnet_tts -Wl,-rpath,'$ORIGIN/lib' -lm -o synth      # shared
-cc -O2 -Iinclude synth.c lib/liblinnet_tts.a -lpthread -ldl -lm -o synth              # static
+cc -O2 -Iinclude examples/synth.c -Llib -llinnet_tts -Wl,-rpath,'$ORIGIN/lib' -lm -o synth      # shared
+cc -O2 -Iinclude examples/synth.c lib/liblinnet_tts.a -lpthread -ldl -lm -o synth              # static
+cc -O2 -Iinclude examples/stream.c -Llib -llinnet_tts -Wl,-rpath,'$ORIGIN/lib' -lm -o stream    # streaming example
 ```
 
 Model weights are distributed separately under the Linnet Weights License (https://github.com/VoxRT/LinnetTTS).

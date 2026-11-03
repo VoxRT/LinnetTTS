@@ -32,15 +32,19 @@ maturin build --release                     # wheel in target/wheels/
 maturin develop --release                   # or: install into the active venv
 ```
 
-The release profile uses fat LTO and strips symbols; the wheel is ~1 MB. Runtime dependency: `numpy`.
+The release profile uses fat LTO and strips symbols; the wheel is ~0.4 MB. Runtime dependency: `numpy`.
 
 ## Test
 
 The tests need the model assets (gitignored). Point `LINNET_ASSETS` at a directory holding
-`linnet-en-35m.fp16.safetensors`, `tokenizer.model` and `voice_hifitts2_val0.npy` (default: `../../local`):
+`linnet-en-35m.fp16.safetensors`, `tokenizer.model` and `voices/linnet-en-f1.npy` (default: `../../local`;
+`local/` = the unpacked weights release, see the root README):
 
 ```sh
 uv venv /tmp/linnet-venv && . /tmp/linnet-venv/bin/activate
 uv pip install target/wheels/linnet_tts-*.whl pytest
 pytest tests
 ```
+
+A plain `python -m venv /tmp/linnet-venv` followed by `pip install target/wheels/linnet_tts-*.whl pytest` works
+just as well where `uv` is not installed.

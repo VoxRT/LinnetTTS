@@ -607,7 +607,7 @@ mod tests {
         });
         let w = format!("{dir}/linnet-en-35m.fp16.safetensors");
         let t = format!("{dir}/tokenizer.model");
-        let v = format!("{dir}/voice_hifitts2_val0.npy");
+        let v = format!("{dir}/voices/linnet-en-f1.npy");
         if [&w, &t, &v].iter().all(|p| std::path::Path::new(p).exists()) {
             Some((w, t, v))
         } else {

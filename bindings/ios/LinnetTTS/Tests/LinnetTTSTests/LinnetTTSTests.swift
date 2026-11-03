@@ -36,7 +36,7 @@ final class LinnetTTSTests: XCTestCase {
             let w = d + "/linnet-en-35m.fp16.safetensors"
             let t = d + "/tokenizer.model"
             guard fm.fileExists(atPath: w), fm.fileExists(atPath: t) else { continue }
-            for v in ["voice.npy", "voice_hifitts2_val0.npy", "voice_librittsr_val0.npy"] where fm.fileExists(atPath: d + "/" + v) {
+            for v in ["voice.npy", "voices/linnet-en-f1.npy"] where fm.fileExists(atPath: d + "/" + v) {
                 return Assets(weights: w, tokenizer: t, voice: d + "/" + v)
             }
         }

@@ -17,7 +17,7 @@ import java.io.File
  *   adb shell mkdir -p /data/local/tmp/linnet
  *   adb push linnet-en-35m.fp16.safetensors tokenizer.model voice.npy /data/local/tmp/linnet/
  *
- * (`voice.npy` = any `[T, 48]` voice file, e.g. voice_hifitts2_val0.npy renamed.) Without the
+ * (`voice.npy` = any `[T, 48]` voice file, e.g. voices/linnet-en-f1.npy renamed.) Without the
  * files the tests are skipped, not failed.
  */
 @RunWith(AndroidJUnit4::class)

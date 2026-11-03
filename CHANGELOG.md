@@ -21,9 +21,11 @@ codec with a Vocos-style decoder, ~41M parameters, 24 kHz, streaming).
 - `bindings/linux/` — C distribution `linnet-tts-<version>-linux-{x86_64,aarch64}.tar.gz` (`.so`, `.a`, header, examples).
 - `bindings/python/` — wheel `linnet-tts` (import `linnet_tts`; abi3, CPython >= 3.9, NumPy in and out, GIL released).
 - `bindings/android/` — AAR `com.voxrt.linnet:linnet-tts` (Kotlin API, JNI in Rust, arm64-v8a + x86_64, minSdk 24,
-  `AudioTrackPlayer`) and a sample app.
+  `AudioTrackPlayer`) and a sample app (package registry publishing follows the first tagged release; see
+  `build/README.md`).
 - `bindings/ios/` — Swift package `LinnetTTS` over a static `LinnetTTS.xcframework` (ios-arm64, simulator arm64 + x86_64,
-  macos-arm64 for host tests; iOS 15 / macOS 12), `LinnetPlayer`, a SwiftUI sample app and XCTests.
+  macos-arm64 for host tests; iOS 15 / macOS 12), `LinnetPlayer`, a SwiftUI sample app and XCTests (package
+  registry publishing follows the first tagged release; see `build/README.md`).
 - `docs/` — model card, weight container format (`linnet-tts/1`), streaming contract. Golden vectors in `tests/goldens/`
   shared by the Python package and the Rust runtime.
 - `build/` — `set_version.sh` (one version for every package), `make_weights_release.sh` (assembles and checks a weights

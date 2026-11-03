@@ -29,7 +29,7 @@ bundle=com.voxrt.linnet.sample
 team_arg=()
 if [ -n "${DEVELOPMENT_TEAM:-}" ]; then team_arg=("DEVELOPMENT_TEAM=$DEVELOPMENT_TEAM"); fi
 
-voice="$(ls "$assets"/voice.npy "$assets"/voice_*.npy 2>/dev/null | head -1 || true)"
+voice="$(ls "$assets"/voice.npy "$assets"/voices/linnet-en-f1.npy "$assets"/voices/*.npy 2>/dev/null | head -1 || true)"
 [ -n "$voice" ] || { echo "no voice .npy in $assets" >&2; exit 1; }
 for f in linnet-en-35m.fp16.safetensors tokenizer.model; do
   [ -f "$assets/$f" ] || { echo "missing $assets/$f" >&2; exit 1; }

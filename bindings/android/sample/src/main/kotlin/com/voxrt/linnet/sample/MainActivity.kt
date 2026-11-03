@@ -24,7 +24,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  *   adb shell run-as com.voxrt.linnet.sample sh -c \
  *     'mkdir -p files && cp /data/local/tmp/linnet-en-35m.fp16.safetensors /data/local/tmp/tokenizer.model /data/local/tmp/voice.npy files/'
  *
- * (`voice.npy` is any `[T, 48]` voice file, e.g. voice_hifitts2_val0.npy renamed. `run-as` works
+ * (`voice.npy` is any `[T, 48]` voice file, e.g. voices/linnet-en-f1.npy renamed. `run-as` works
  * for debug builds; for a release build push to a world-readable directory and change [modelDir].)
  */
 class MainActivity : AppCompatActivity() {

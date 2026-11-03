@@ -1,7 +1,7 @@
 """Bit-for-bit check of the PyTorch package against the reference input/output vectors in tests/goldens/ref.
 
 Requires the released weights and tokenizer:
-    LINNET_WEIGHTS=/path/linnet-en-35m.safetensors LINNET_TOKENIZER=/path/lm_sp.model pytest tests/test_ref_goldens.py -q
+    LINNET_WEIGHTS=/path/linnet-en-35m.safetensors LINNET_TOKENIZER=/path/tokenizer.model pytest tests/test_ref_goldens.py -q
 Without them the tests are skipped. Set LINNET_GOLDEN_TOL (default 0.0) to allow summation-order noise on a different CPU / torch build.
 """
 

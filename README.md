@@ -3,7 +3,7 @@
 Lightweight on-device text-to-speech by VoxRT: an autoregressive flow LM (1 NFE per frame) over a 25 Hz continuous-latent neural codec,
 with a Vocos-style decoder. ~41M parameters end to end (31.5M LM + 9.9M decoder), streaming synthesis, built-in voices, fp16 weights.
 
-- `python/` — `linnet_tts_torch`: reference model definition and inference in PyTorch (no training code). The on-device Python package `linnet-tts` is built from the Rust runtime in `bindings/python/`.
+- `python/` — `linnet_tts_torch`: reference model definition and inference in PyTorch (no training code; see `python/README.md`). The on-device Python package `linnet-tts` is built from the Rust runtime in `bindings/python/`.
 - `runtime/` — Rust runtime: `linnet-ops` (only the kernels this model uses) and `linnet-tts` (model, streaming session, C API).
 - `bindings/` — platform wrappers: Android AAR, iOS Swift package (xcframework), Linux C library and Python wheel. Browser (WASM) is deferred to a later release.
 - `build/` — build and packaging scripts.
@@ -12,6 +12,78 @@ with a Vocos-style decoder. ~41M parameters end to end (31.5M LM + 9.9M decoder)
 
 Code is licensed under Apache-2.0 (see `LICENSE`). Model weights are distributed separately under the Linnet Weights License
 (see `WEIGHTS_LICENSE.md`); the codec encoder used for voice cloning is not part of this release.
+
+The model is called `linnet-en-35m` after its roughly 35 M parameters outside the 6001×512 text token table (41.4 M in total:
+flow LM 31.5 M including the 3.1 M text table, decoder 9.9 M); the fp16 weights file is 83 MB.
+
+## Quick start
+
+1. **Weights.** Download the `weights-v1` release (see "Weights" below) and unpack it into `local/` at the repository root.
+   Every test, script and README in this repository assumes this layout:
+
+   ```
+   local/linnet-en-35m.fp16.safetensors    runtime weights (what the Rust runtime and the bindings load)
+   local/linnet-en-35m.safetensors         fp32 reference weights (PyTorch package, golden tests)
+   local/tokenizer.model                   SentencePiece model
+   local/voices/linnet-en-f1.npy           built-in voices ([T, 48] float32 .npy); linnet-en-m1.npy as well
+   ```
+
+   `local/` is gitignored: nothing you put there is committed.
+
+2. **Rust runtime.** The `synth` example takes the weights, the tokenizer, a voice, the text and an output WAV, followed by
+   the optional `temp` (0.3), `cfg` (2.0), `seed` (0) and `threads` (0 = automatic):
+
+   ```sh
+   cd runtime
+   cargo run --release --example synth -- ../local/linnet-en-35m.fp16.safetensors ../local/tokenizer.model \
+       ../local/voices/linnet-en-f1.npy "Hello from Linnet." hello.wav
+   ```
+
+3. **Python wheel** (the Rust runtime as a Python extension, no PyTorch): `pip install linnet-tts`, or build it with
+   `cd bindings/python && maturin build --release` and install the wheel from `target/wheels/`.
+
+   ```python
+   import linnet_tts, soundfile as sf
+
+   model = linnet_tts.Model("local/linnet-en-35m.fp16.safetensors", "local/tokenizer.model")
+   voice = model.load_voice("local/voices/linnet-en-f1.npy")
+   audio = model.synthesize("Hello from Linnet.", voice, temp=0.3, cfg=2.0, seed=0)   # np.float32 @ 24 kHz
+   sf.write("hello.wav", audio, model.sample_rate)
+   ```
+
+   Streaming: `session = model.session(voice, seed=0)`, `session.prime(text)`, then iterate `for chunk in session`
+   (80 ms per step). See `bindings/python/README.md`.
+
+4. **PyTorch reference** (`python/`, fp32, bit-exact against the training-side vectors, not optimised for speed):
+   `pip install ./python`.
+
+   ```python
+   import soundfile as sf
+   from linnet_tts_torch import Linnet
+
+   lin = Linnet.from_files("local/linnet-en-35m.safetensors", "local/tokenizer.model")
+   voice = Linnet.load_voice("local/voices/linnet-en-f1.npy")
+   wav = lin.synthesize("Hello from Linnet.", voice, temp=0.3, cfg=2.0)        # torch.float32 [n] @ 24 kHz
+   sf.write("hello.wav", wav.numpy(), lin.sample_rate)
+   ```
+
+   See `python/README.md`.
+
+5. **Tests.** With the files in `local/` the tests find them on their own; the environment variables below redirect
+   them (one file each) or the whole directory:
+
+   - `LINNET_WEIGHTS` — fp32 weights for the Rust golden tests and `tests/test_ref_goldens.py` (default `local/linnet-en-35m.safetensors`)
+   - `LINNET_WEIGHTS_FP16` — fp16 weights for the Rust golden tests (default `local/linnet-en-35m.fp16.safetensors`)
+   - `LINNET_TOKENIZER` — SentencePiece model (default `local/tokenizer.model`)
+   - `LINNET_VOICE` — voice file for the Rust golden tests (default `local/voices/linnet-en-f1.npy`)
+   - `LINNET_ASSETS` — directory with all of the above for the wheel, Android and iOS tests (default `local/`)
+
+   `cd runtime && cargo test --release` runs the Rust suite including the golden comparison against `tests/goldens/`
+   (a missing input skips a golden test; `cargo test -- --nocapture` shows the `SKIPPED` line);
+   `pytest bindings/python/tests` tests the installed wheel; `LINNET_WEIGHTS=local/linnet-en-35m.safetensors
+   LINNET_TOKENIZER=local/tokenizer.model pytest tests/test_ref_goldens.py` checks the PyTorch package against
+   `tests/goldens/ref`; `python tools/make_goldens.py --weights local/linnet-en-35m.safetensors --tokenizer
+   local/tokenizer.model --voice local/voices/linnet-en-f1.npy` regenerates `tests/goldens/{hello,meeting}`.
 
 ## Weights
 
