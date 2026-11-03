@@ -1,0 +1,25 @@
+{
+ "text": "The meeting is at nine.",
+ "voice": "voices/linnet-en-f1.npy",
+ "tokens": [
+  311,
+  1675,
+  298,
+  313,
+  1643,
+  282
+ ],
+ "temp": 0.3,
+ "cfg": 2.0,
+ "max_frames": 60,
+ "eos_threshold": -1.0,
+ "seed": 7,
+ "n_steps": 17,
+ "n_noise": 18,
+ "eos_fired": true,
+ "latent_dim": 48,
+ "wav_len": 32640,
+ "sample_rate": 24000,
+ "output_delay": 720,
+ "stream_vs_offline_max_abs": 1.0579824447631836e-06
+}

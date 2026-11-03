@@ -1,0 +1,562 @@
+{
+ "created": "2026-11-03 15:46",
+ "lm_step": 800000,
+ "lm_ema": true,
+ "codec": "canon-avg (ec0b-vocosfull-avg-pins/it1000000.ckpt via load_ec0b_any)",
+ "torch": "2.13.0+cu130",
+ "sample_rate": 24000,
+ "prompt_sec": 6.0,
+ "prompt_peak_db": -3.0,
+ "params": {
+  "temp": 0.3,
+  "cfg": 2.0,
+  "max_frames": 200,
+  "eos_threshold": -1.0
+ },
+ "frame_samples": 1920,
+ "output_delay": 720,
+ "voices": {
+  "f1": {
+   "prompt_wav": {
+    "file": "voice_f1_prompt.bin",
+    "shape": [
+     144000
+    ],
+    "dtype": "f32le",
+    "sha256": "4052eb784adcdf1e43a839f2142a330a2918d32928fcbedad48fafca6efe73a0"
+   },
+   "latent": {
+    "file": "voice_f1_latent.bin",
+    "shape": [
+     76,
+     48
+    ],
+    "dtype": "f32le",
+    "sha256": "e7a23353f86a54e39562a84c3b4e6836805a916b2c49daf8f19b2a4e51fa1035"
+   },
+   "roundtrip_wav": {
+    "file": "voice_f1_roundtrip.bin",
+    "shape": [
+     145920
+    ],
+    "dtype": "f32le",
+    "sha256": "c63462d1cfa81230b51d49b586a5c77c0ed04ba19ee8493bc6085058c5c54783"
+   }
+  },
+  "m1": {
+   "prompt_wav": {
+    "file": "voice_m1_prompt.bin",
+    "shape": [
+     144000
+    ],
+    "dtype": "f32le",
+    "sha256": "a7e97d5687ebc194a26513f8c9de6866dadfc5e112639e9d82ac58e9024181c5"
+   },
+   "latent": {
+    "file": "voice_m1_latent.bin",
+    "shape": [
+     76,
+     48
+    ],
+    "dtype": "f32le",
+    "sha256": "62ce19a83677952fee670c6dc7cf472325373bf8620edd917124a6dec81b2f4b"
+   },
+   "roundtrip_wav": {
+    "file": "voice_m1_roundtrip.bin",
+    "shape": [
+     145920
+    ],
+    "dtype": "f32le",
+    "sha256": "22b83efdf6bb207b2107c9bde687719e50284e413e062e8a4f04c6615a862eee"
+   }
+  }
+ },
+ "decoder_only": {
+  "latents_24": {
+   "file": "dec_latents_24.bin",
+   "shape": [
+    60,
+    24
+   ],
+   "dtype": "f32le",
+   "sha256": "7c0cefbd8b286d2e54e7e5f02a56ab79ae8a3984776ef8d1b7cac4420f71c72a"
+  },
+  "wav_raw": {
+   "file": "dec_wav_raw.bin",
+   "shape": [
+    57600
+   ],
+   "dtype": "f32le",
+   "sha256": "2900a8656cbf4e5a965eddbaf25c2ee85523aad9d08324b0464b8b09eb62fef9"
+  },
+  "wav_shifted": {
+   "file": "dec_wav_shifted.bin",
+   "shape": [
+    57600
+   ],
+   "dtype": "f32le",
+   "sha256": "ce60dd5385009f6f82ab42a825e047c6b1cfcb0a0b9ef84049680089a2e1ea7a"
+  },
+  "note": "latents_24 = 60 кадров × 24 (пары → 30 шагов × 48 в порядке reshape); wav_raw — выход decoder без сдвига; wav_shifted — после сдвига 720 и паддинга"
+ },
+ "cases": {
+  "f1__fox": {
+   "voice": "f1",
+   "text": "The quick brown fox jumps over the lazy dog.",
+   "tokens": [
+    311,
+    1867,
+    1872,
+    4207,
+    3802,
+    281,
+    386,
+    280,
+    783,
+    527,
+    322,
+    1247,
+    282
+   ],
+   "seed": 1234,
+   "params": {
+    "temp": 0.3,
+    "cfg": 2.0,
+    "max_frames": 200,
+    "eos_threshold": -1.0
+   },
+   "noise_unit": {
+    "file": "f1__fox_noise.bin",
+    "shape": [
+     33,
+     48
+    ],
+    "dtype": "f32le",
+    "sha256": "aa80e81d03b82a579ec8a0230f2535efeb0924e4df108e66ab3775964804aa57"
+   },
+   "latents_48": {
+    "file": "f1__fox_latents.bin",
+    "shape": [
+     32,
+     48
+    ],
+    "dtype": "f32le",
+    "sha256": "47ed4e77518c86f7b0f9b86f02f7b34a183b89bbd11c9300dfbfb5b2e21279a2"
+   },
+   "wav": {
+    "file": "f1__fox_wav.bin",
+    "shape": [
+     61440
+    ],
+    "dtype": "f32le",
+    "sha256": "928fc62349de5d497c22b3c0306557d2b19d856bd3455ce972ba395632133ac0"
+   },
+   "steps_drawn": 33,
+   "frames_kept": 32,
+   "note": "noise_unit[i] — розыгрыш на шаге i до умножения на sqrt(temp); последний розыгрыш — на шаге EOS (кадр не сохранён)"
+  },
+  "f1__window": {
+   "voice": "f1",
+   "text": "Could you please close the window before you leave?",
+   "tokens": [
+    1667,
+    306,
+    1398,
+    862,
+    280,
+    1114,
+    382,
+    306,
+    891,
+    343
+   ],
+   "seed": 1234,
+   "params": {
+    "temp": 0.3,
+    "cfg": 2.0,
+    "max_frames": 200,
+    "eos_threshold": -1.0
+   },
+   "noise_unit": {
+    "file": "f1__window_noise.bin",
+    "shape": [
+     27,
+     48
+    ],
+    "dtype": "f32le",
+    "sha256": "763d2901c2869aef6025684aa3b044396873fe7eec2b3effa3937c154c44e7d4"
+   },
+   "latents_48": {
+    "file": "f1__window_latents.bin",
+    "shape": [
+     26,
+     48
+    ],
+    "dtype": "f32le",
+    "sha256": "6aa38b751eb3df86a99b8b3780f8468751a611dd939e88b5262c8df5c4cb89ff"
+   },
+   "wav": {
+    "file": "f1__window_wav.bin",
+    "shape": [
+     49920
+    ],
+    "dtype": "f32le",
+    "sha256": "e4ff311974c6302f25dfa8d9a66fb467248eb052eaab745c4d3556c020cce76d"
+   },
+   "steps_drawn": 27,
+   "frames_kept": 26,
+   "note": "noise_unit[i] — розыгрыш на шаге i до умножения на sqrt(temp); последний розыгрыш — на шаге EOS (кадр не сохранён)"
+  },
+  "f1__half4": {
+   "voice": "f1",
+   "text": "The news starts at half past four.",
+   "tokens": [
+    311,
+    1906,
+    1326,
+    281,
+    313,
+    661,
+    993,
+    730,
+    282
+   ],
+   "seed": 1234,
+   "params": {
+    "temp": 0.3,
+    "cfg": 2.0,
+    "max_frames": 200,
+    "eos_threshold": -1.0
+   },
+   "noise_unit": {
+    "file": "f1__half4_noise.bin",
+    "shape": [
+     25,
+     48
+    ],
+    "dtype": "f32le",
+    "sha256": "5d55a5d84588d4d9d45b4dc704ef9f119d088e17c850e71df96eb3862a63f85b"
+   },
+   "latents_48": {
+    "file": "f1__half4_latents.bin",
+    "shape": [
+     24,
+     48
+    ],
+    "dtype": "f32le",
+    "sha256": "06158f3b658b1f3e4e104a13a5dd95117f5210c49728fde6f5643297e2842e0a"
+   },
+   "wav": {
+    "file": "f1__half4_wav.bin",
+    "shape": [
+     46080
+    ],
+    "dtype": "f32le",
+    "sha256": "17200072d9b094bb908cf5c731267e4e77b8d64f69b50a590f501165d9c6be40"
+   },
+   "steps_drawn": 25,
+   "frames_kept": 24,
+   "note": "noise_unit[i] — розыгрыш на шаге i до умножения на sqrt(temp); последний розыгрыш — на шаге EOS (кадр не сохранён)"
+  },
+  "m1__fox": {
+   "voice": "m1",
+   "text": "The quick brown fox jumps over the lazy dog.",
+   "tokens": [
+    311,
+    1867,
+    1872,
+    4207,
+    3802,
+    281,
+    386,
+    280,
+    783,
+    527,
+    322,
+    1247,
+    282
+   ],
+   "seed": 1234,
+   "params": {
+    "temp": 0.3,
+    "cfg": 2.0,
+    "max_frames": 200,
+    "eos_threshold": -1.0
+   },
+   "noise_unit": {
+    "file": "m1__fox_noise.bin",
+    "shape": [
+     29,
+     48
+    ],
+    "dtype": "f32le",
+    "sha256": "e3c2c8c4cfdded0686bc9de6efd840236a30d4dd87f8a633852e1e5af43ef081"
+   },
+   "latents_48": {
+    "file": "m1__fox_latents.bin",
+    "shape": [
+     28,
+     48
+    ],
+    "dtype": "f32le",
+    "sha256": "bb80b4c9830a5b903705fa9f60bc370c4b29a1fadbe7d21e29d4fe866e2e01ce"
+   },
+   "wav": {
+    "file": "m1__fox_wav.bin",
+    "shape": [
+     53760
+    ],
+    "dtype": "f32le",
+    "sha256": "46e92297c3ba88dfff64b46811f4aa5b96d3e0251798fcd3fe128e9cdf343cd4"
+   },
+   "steps_drawn": 29,
+   "frames_kept": 28,
+   "note": "noise_unit[i] — розыгрыш на шаге i до умножения на sqrt(temp); последний розыгрыш — на шаге EOS (кадр не сохранён)"
+  },
+  "m1__window": {
+   "voice": "m1",
+   "text": "Could you please close the window before you leave?",
+   "tokens": [
+    1667,
+    306,
+    1398,
+    862,
+    280,
+    1114,
+    382,
+    306,
+    891,
+    343
+   ],
+   "seed": 1234,
+   "params": {
+    "temp": 0.3,
+    "cfg": 2.0,
+    "max_frames": 200,
+    "eos_threshold": -1.0
+   },
+   "noise_unit": {
+    "file": "m1__window_noise.bin",
+    "shape": [
+     25,
+     48
+    ],
+    "dtype": "f32le",
+    "sha256": "5d55a5d84588d4d9d45b4dc704ef9f119d088e17c850e71df96eb3862a63f85b"
+   },
+   "latents_48": {
+    "file": "m1__window_latents.bin",
+    "shape": [
+     24,
+     48
+    ],
+    "dtype": "f32le",
+    "sha256": "42956450682756dba6f20b12abb9c5af33c0dc1c3b9c0a8c799ddc4edad66509"
+   },
+   "wav": {
+    "file": "m1__window_wav.bin",
+    "shape": [
+     46080
+    ],
+    "dtype": "f32le",
+    "sha256": "2c6d57caba99d97c25fc1e1956a2ccd1d1438e71fbc1219c8a4a5a718423eb5b"
+   },
+   "steps_drawn": 25,
+   "frames_kept": 24,
+   "note": "noise_unit[i] — розыгрыш на шаге i до умножения на sqrt(temp); последний розыгрыш — на шаге EOS (кадр не сохранён)"
+  },
+  "m1__half4": {
+   "voice": "m1",
+   "text": "The news starts at half past four.",
+   "tokens": [
+    311,
+    1906,
+    1326,
+    281,
+    313,
+    661,
+    993,
+    730,
+    282
+   ],
+   "seed": 1234,
+   "params": {
+    "temp": 0.3,
+    "cfg": 2.0,
+    "max_frames": 200,
+    "eos_threshold": -1.0
+   },
+   "noise_unit": {
+    "file": "m1__half4_noise.bin",
+    "shape": [
+     24,
+     48
+    ],
+    "dtype": "f32le",
+    "sha256": "237d235f46f71557fb3b70fd047a07062882906edc582ed2a887394cf035ccdb"
+   },
+   "latents_48": {
+    "file": "m1__half4_latents.bin",
+    "shape": [
+     23,
+     48
+    ],
+    "dtype": "f32le",
+    "sha256": "eea0a536ba26bebfa9c17a545da3977567401100c4272c1076b886aa652f5ba4"
+   },
+   "wav": {
+    "file": "m1__half4_wav.bin",
+    "shape": [
+     44160
+    ],
+    "dtype": "f32le",
+    "sha256": "d80d157117bb47e613ad07f18ed17fe3ccaacf0dd1930eef63484dc91235cb48"
+   },
+   "steps_drawn": 24,
+   "frames_kept": 23,
+   "note": "noise_unit[i] — розыгрыш на шаге i до умножения на sqrt(temp); последний розыгрыш — на шаге EOS (кадр не сохранён)"
+  },
+  "f1__cfg1": {
+   "voice": "f1",
+   "text": "The quick brown fox jumps over the lazy dog.",
+   "tokens": [
+    311,
+    1867,
+    1872,
+    4207,
+    3802,
+    281,
+    386,
+    280,
+    783,
+    527,
+    322,
+    1247,
+    282
+   ],
+   "seed": 1234,
+   "params": {
+    "temp": 0.3,
+    "cfg": 1.0,
+    "max_frames": 200,
+    "eos_threshold": -1.0
+   },
+   "noise_unit": {
+    "file": "f1__cfg1_noise.bin",
+    "shape": [
+     37,
+     48
+    ],
+    "dtype": "f32le",
+    "sha256": "320c3fc51f3d96c97bcb2af282bf92e4d18fdbc74b612904e7ecfc4de971c73e"
+   },
+   "latents_48": {
+    "file": "f1__cfg1_latents.bin",
+    "shape": [
+     36,
+     48
+    ],
+    "dtype": "f32le",
+    "sha256": "f482ee7f92ef9f7d5b207f7224c0e67ac0b22f0a40c93d2307263478fc9d2ea7"
+   },
+   "wav": {
+    "file": "f1__cfg1_wav.bin",
+    "shape": [
+     69120
+    ],
+    "dtype": "f32le",
+    "sha256": "aa0ca26d3333e7460e9c4578f18c601322828f2d4b273a8ce349e3271a9559cd"
+   },
+   "steps_drawn": 37,
+   "frames_kept": 36,
+   "note": "noise_unit[i] — розыгрыш на шаге i до умножения на sqrt(temp); последний розыгрыш — на шаге EOS (кадр не сохранён)"
+  },
+  "m1__long": {
+   "voice": "m1",
+   "text": "When the committee finally met on Thursday afternoon, nobody expected the discussion to last more than an hour, yet by the time the last speaker had finished, the windows were dark and the coffee had long gone cold.",
+   "tokens": [
+    522,
+    280,
+    5042,
+    2262,
+    1158,
+    310,
+    4973,
+    1410,
+    279,
+    3196,
+    1804,
+    280,
+    4046,
+    285,
+    483,
+    361,
+    385,
+    340,
+    886,
+    279,
+    568,
+    314,
+    280,
+    372,
+    280,
+    483,
+    822,
+    333,
+    303,
+    2159,
+    279,
+    280,
+    2805,
+    326,
+    876,
+    283,
+    280,
+    4069,
+    303,
+    432,
+    833,
+    981,
+    282
+   ],
+   "seed": 1234,
+   "params": {
+    "temp": 0.3,
+    "cfg": 2.0,
+    "max_frames": 300,
+    "eos_threshold": -1.0
+   },
+   "noise_unit": {
+    "file": "m1__long_noise.bin",
+    "shape": [
+     141,
+     48
+    ],
+    "dtype": "f32le",
+    "sha256": "b318545c6d2c46814c63f5c1d153de96e0515687057da99aedb201bd61967066"
+   },
+   "latents_48": {
+    "file": "m1__long_latents.bin",
+    "shape": [
+     140,
+     48
+    ],
+    "dtype": "f32le",
+    "sha256": "6f0131c81c08edef14da440308ebce7e331089370e1b6ee2520367bb3473b836"
+   },
+   "wav": {
+    "file": "m1__long_wav.bin",
+    "shape": [
+     268800
+    ],
+    "dtype": "f32le",
+    "sha256": "0ad85531d4c90ab7f2fe86e86410993f833cb5109d25ad89de82595c6dccb6d0"
+   },
+   "steps_drawn": 141,
+   "frames_kept": 140,
+   "note": "noise_unit[i] — розыгрыш на шаге i до умножения на sqrt(temp); последний розыгрыш — на шаге EOS (кадр не сохранён)"
+  }
+ },
+ "note": "Reference input/output vectors produced by the training-side implementation of the same model; see tests/test_ref_goldens.py",
+ "voices_note": "f1 and m1 are the released synthetic built-in voices (linnet-en-f1, linnet-en-m1); the prompt wavs are the designed-voice utterances they were encoded from"
+}

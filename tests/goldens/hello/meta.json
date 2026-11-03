@@ -1,0 +1,24 @@
+{
+ "text": "Hello there.",
+ "voice": "voices/linnet-en-f1.npy",
+ "tokens": [
+  345,
+  395,
+  440,
+  350,
+  282
+ ],
+ "temp": 0.3,
+ "cfg": 2.0,
+ "max_frames": 60,
+ "eos_threshold": -1.0,
+ "seed": 11,
+ "n_steps": 10,
+ "n_noise": 11,
+ "eos_fired": true,
+ "latent_dim": 48,
+ "wav_len": 19200,
+ "sample_rate": 24000,
+ "output_delay": 720,
+ "stream_vs_offline_max_abs": 6.211921572685242e-07
+}
