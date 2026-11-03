@@ -22,9 +22,14 @@
 
 ## Release checklist
 
-1. `build/set_version.sh X.Y.Z`, update `CHANGELOG.md`, commit.
+1. `build/set_version.sh X.Y.Z`, update `CHANGELOG.md`, commit and push.
 2. `cd runtime && cargo test --release`; `bindings/linux/build.sh` and `bindings/linux/build.sh --target aarch64-unknown-linux-gnu`.
-3. Tag `vX.Y.Z` and push the tag: `.github/workflows/release.yml` builds the wheels, the Linux tarballs, the AAR and
-   the iOS xcframework and attaches them to the GitHub release.
-4. After the release, put the xcframework checksum from the release assets into the URL form of
-   `bindings/ios/LinnetTTS/Package.swift` if the package is to be consumed by URL.
+3. Run the `xcframework` workflow (Actions, "Run workflow", version `X.Y.Z`). It builds `LinnetTTS-X.Y.Z.xcframework.zip`
+   and attaches it with its SwiftPM checksum to a draft release `vX.Y.Z`.
+4. Put that checksum and the version into `Package.swift` (`let version`, `let checksum`), commit, tag `vX.Y.Z` and push
+   the tag. `release.yml` builds the wheels, the Linux tarballs and the AAR, verifies the checksum in `Package.swift`
+   against the draft asset, attaches everything to the release and publishes it.
+5. Publish the wheels to PyPI and the weights release `weights-vN` (see `make_weights_release.sh`).
+
+The xcframework is built once and never rebuilt by the tag workflow: SwiftPM consumers resolve the binary target by
+URL and checksum, and a rebuilt archive would not match.

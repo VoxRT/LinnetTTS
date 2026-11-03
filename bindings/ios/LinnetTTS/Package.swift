@@ -2,14 +2,9 @@
 // LinnetTTS Swift package: a Swift API over the C API of the Rust runtime, shipped as
 // LinnetTTS.xcframework (static library; ios-arm64, ios simulator arm64 + x86_64, macos-arm64).
 //
-// The binary target below points at the local xcframework produced by
-// ../build-xcframework.sh. For a release, replace it with the URL form:
-//
-//     .binaryTarget(
-//         name: "CLinnetTTS",
-//         url: "https://github.com/VoxRT/LinnetTTS/releases/download/v<version>/LinnetTTS.xcframework.zip",
-//         checksum: "<contents of dist/LinnetTTS.xcframework.checksum>"
-//     ),
+// This is the local development package: the binary target below points at the xcframework produced by
+// ../build-xcframework.sh. The package consumed by URL lives in the repository root (Package.swift there) and
+// references the release asset by URL and SwiftPM checksum.
 import PackageDescription
 
 let package = Package(

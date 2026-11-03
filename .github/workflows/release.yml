@@ -131,28 +131,24 @@ jobs:
           if-no-files-found: error
 
   ios:
-    name: iOS xcframework
+    name: iOS xcframework checksum
     needs: check-version
-    runs-on: macos-14
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-apple-ios, aarch64-apple-ios-sim, x86_64-apple-ios, aarch64-apple-darwin
-      - name: Build (static libraries, no code signing involved)
-        run: bindings/ios/build-xcframework.sh
-      - name: Name the artefacts
+      - name: The xcframework was attached to the draft release by the xcframework workflow; verify Package.swift
         run: |
           V=${{ needs.check-version.outputs.version }}
           mkdir -p out
-          cp bindings/ios/dist/LinnetTTS.xcframework.zip out/LinnetTTS-$V.xcframework.zip
-          (cd out && shasum -a 256 LinnetTTS-$V.xcframework.zip > LinnetTTS-$V.xcframework.zip.sha256)
-          cp bindings/ios/dist/LinnetTTS.xcframework.checksum out/LinnetTTS-$V.xcframework.swiftpm-checksum
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ios-xcframework
-          path: out/*
-          if-no-files-found: error
+          gh release download "v$V" --pattern "LinnetTTS-$V.xcframework.*" --dir out
+          ls out
+          WANT=$(cat "out/LinnetTTS-$V.xcframework.swiftpm-checksum")
+          HAVE=$(grep -E '^let checksum = "' Package.swift | sed -E 's/.*"([0-9a-f]+)".*/\1/')
+          test "$WANT" = "$HAVE" || { echo "Package.swift checksum $HAVE != asset checksum $WANT"; exit 1; }
+          PV=$(grep -E '^let version = "' Package.swift | sed -E 's/.*"(.*)".*/\1/')
+          test "$PV" = "$V" || { echo "Package.swift version $PV != $V"; exit 1; }
 
   release:
     name: GitHub release
@@ -176,3 +172,4 @@ jobs:
           body_path: notes.md
           files: assets/*
           fail_on_unmatched_files: true
+          draft: false

@@ -1,0 +1,50 @@
+name: xcframework
+
+# First step of a release: build the iOS/macOS xcframework and attach it to a draft GitHub release, so that its
+# SwiftPM checksum can be written into Package.swift before the version is tagged (build/README.md, "Release checklist").
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (X.Y.Z); the draft release is named v<version>"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: iOS xcframework
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios, aarch64-apple-ios-sim, x86_64-apple-ios, aarch64-apple-darwin
+      - name: Check the version
+        run: |
+          V="${{ github.event.inputs.version }}"
+          C=$(grep -E '^version = "' runtime/linnet-tts/Cargo.toml | head -1 | sed -E 's/.*"(.*)".*/\1/')
+          test "$V" = "$C" || { echo "input version $V != crate version $C (run build/set_version.sh first)"; exit 1; }
+      - name: Build (static libraries, no code signing involved)
+        run: bindings/ios/build-xcframework.sh
+      - name: Name the artefacts
+        run: |
+          V="${{ github.event.inputs.version }}"
+          mkdir -p out
+          cp bindings/ios/dist/LinnetTTS.xcframework.zip out/LinnetTTS-$V.xcframework.zip
+          (cd out && shasum -a 256 LinnetTTS-$V.xcframework.zip > LinnetTTS-$V.xcframework.zip.sha256)
+          (cd out && swift package compute-checksum LinnetTTS-$V.xcframework.zip > LinnetTTS-$V.xcframework.swiftpm-checksum)
+          echo "SwiftPM checksum: $(cat out/LinnetTTS-$V.xcframework.swiftpm-checksum)"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios-xcframework
+          path: out/*
+          if-no-files-found: error
+      - name: Attach to the draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ github.event.inputs.version }}
+          name: v${{ github.event.inputs.version }}
+          draft: true
+          files: out/*
