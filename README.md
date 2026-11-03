@@ -11,7 +11,8 @@ with a Vocos-style decoder. ~41M parameters end to end (31.5M LM + 9.9M decoder)
 - `docs/` — model card, weight container format, streaming contract.
 
 Code is licensed under Apache-2.0 (see `LICENSE`). Model weights are distributed separately under the Linnet Weights License
-(see `WEIGHTS_LICENSE.md`); the codec encoder used for voice cloning is not part of this release.
+(see `WEIGHTS_LICENSE.md`); the codec encoder used for voice cloning is not part of this release. The test fixtures in `tests/goldens/` include
+copies of the two built-in voices; `tests/goldens/NOTICE.md` states their license and the permission to redistribute them with the repository.
 
 The model is called `linnet-en-35m` after its roughly 35 M parameters outside the 6001×512 text token table (41.4 M in total:
 flow LM 31.5 M including the 3.1 M text table, decoder 9.9 M); the fp16 weights file is 83 MB.

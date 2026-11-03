@@ -91,6 +91,10 @@ When You redistribute the Weights, the Voice Files or a Derivative, in any form:
 4. do not use the names "Linnet", "LinnetTTS" or "VoxRT" to name a Derivative or to suggest endorsement by the Licensor, beyond
    the attribution above.
 
+Copies of the Voice Files that the Licensor includes as test fixtures in the LinnetTTS source repository may be redistributed as
+part of that repository, or of a fork, clone, mirror or source archive of it, for testing the code, without items 1 and 2 of this
+Section; the notice in that repository (`tests/goldens/NOTICE.md`) identifies them.
+
 ## 6. Attribution in products
 
 Products and services that use the Weights or Derivatives shall include the notice `Powered by Linnet (VoxRT)` in a place where
