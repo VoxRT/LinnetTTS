@@ -4,7 +4,7 @@ All notable changes to this project are documented in this file. The format foll
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/).
 Code releases are tagged `vX.Y.Z`; model weights are released separately as `weights-vN` (see `README.md`, "Weights").
 
-## [0.1.0] - 2026-11-03
+## [0.1.0] - 2026-11-04
 
 First public release of LinnetTTS: lightweight on-device English text-to-speech (flow LM over a 25 Hz continuous-latent
 codec with a Vocos-style decoder, ~41M parameters, 24 kHz, streaming).
