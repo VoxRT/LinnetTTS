@@ -20,6 +20,7 @@ SENTS = [
 ]
 RUNS = 3
 M = os.environ.get("BENCH_MODELS", "models")  # directory layout: see docs/benchmarks.md
+# BENCH_PIPER_VOICE selects the Piper voice family (default en_US-ljspeech; en_US-lessac also measured).
 
 
 def timed(gen):
@@ -53,7 +54,7 @@ def run_piper(threads, quality):
     import onnxruntime as ort
     import numpy as np
     so = ort.SessionOptions(); so.intra_op_num_threads = threads; so.inter_op_num_threads = 1
-    path = f"{M}/en_US-lessac-{quality}.onnx"
+    path = f"{M}/{os.environ.get('BENCH_PIPER_VOICE', 'en_US-ljspeech')}-{quality}.onnx"
     try:
         voice = PiperVoice.load(path, use_cuda=False)
         voice.session = ort.InferenceSession(path, sess_options=so, providers=["CPUExecutionProvider"])

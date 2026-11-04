@@ -171,8 +171,8 @@ versions and the reproduction script: `docs/benchmarks.md`, `tools/bench_cpu_tts
 | Linnet `linnet-en-35m` (fp16, Rust) | 41 M | 79 MB | yes | every 80 ms | 10.6 % | 3.4 % | 87 / 133 ms | 187 MB |
 | pocket-tts 4.0.1 (PyTorch) | 100 M | 224 MB | yes | every 80 ms | 23.8 % (2 cores) | 24.1 % | 71 / 82 ms | 968 MB |
 | Kokoro-82M (ONNX fp32) | 81 M | 338 MB | no | no | 51.7 % | 17.2 % | 1.5 / 9.6 s | 1246 MB |
-| Piper `en_US-lessac-medium` (ONNX) | 16 M | 60 MB | no | per sentence | 5.7 % | 2.1 % | 149 / 232 ms | 392 MB |
-| Piper `en_US-lessac-high` (ONNX) | 28 M | 108 MB | no | per sentence | 41.1 % | 11.9 % | 1.1 / 1.8 s | 502 MB |
+| Piper `en_US-ljspeech-medium` (ONNX) | 16 M | 61 MB | no | per sentence | 5.8 % | 2.1 % | 180 / 283 ms | 503 MB |
+| Piper `en_US-ljspeech-high` (ONNX) | 28 M | 109 MB | no | per sentence | 42.5 % | 12.4 % | 1.4 / 2.1 s | 639 MB |
 
 ## Weights
 
