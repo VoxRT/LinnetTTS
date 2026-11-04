@@ -1,7 +1,11 @@
 # LinnetTTS
 
-Lightweight on-device text-to-speech by VoxRT: an autoregressive flow LM (1 NFE per frame) over a 25 Hz continuous-latent neural codec,
-with a Vocos-style decoder. ~41M parameters end to end (31.5M LM + 9.9M decoder), streaming synthesis, built-in voices, fp16 weights.
+Lightweight on-device text-to-speech with voice cloning, by VoxRT: the model speaks in any voice given to it as a short voice-prompt
+latent, streams audio from the first 80 ms step, and runs in real time on a single phone CPU core. Under the hood: an autoregressive
+flow LM (1 NFE per frame) over a 25 Hz continuous-latent neural codec with a Vocos-style decoder, ~41M parameters end to end
+(31.5M LM + 9.9M decoder), fp16 weights. The release ships two built-in voices; voice prompts for new voices (cloning from a
+recording) are produced by VoxRT's encoder, which is not published, and are available under a separate license (see
+`WEIGHTS_LICENSE.md`).
 
 - `python/` — `linnet_tts_torch`: reference model definition and inference in PyTorch (no training code; see `python/README.md`). The on-device Python package `linnet-tts` is built from the Rust runtime in `bindings/python/`.
 - `runtime/` — Rust runtime: `linnet-ops` (only the kernels this model uses) and `linnet-tts` (model, streaming session, C API).
@@ -108,7 +112,15 @@ flow LM 31.5 M including the 3.1 M text table, decoder 9.9 M; 38.4 M outside the
 ## Examples
 
 Four utterances made with the released weights and the default parameters (`temp` 0.3, `cfg` 2.0, `seed` 0); the
-files are in `examples/audio/` together with the command that reproduces them.
+files are in `examples/audio/` together with the command that reproduces them. The same synthesis is available from every
+channel, each with its own README and sample code:
+
+- Linux C / C++: [`bindings/linux/`](bindings/linux/README.md) (`.so`/`.a` + header, `synth.c` and `stream.c` examples)
+- Python wheel `linnet-tts`: [`bindings/python/`](bindings/python/README.md)
+- Android AAR (Kotlin): [`bindings/android/`](bindings/android/README.md) and the sample app in `bindings/android/sample/`
+- iOS / macOS Swift package: [`bindings/ios/`](bindings/ios/README.md) and the SwiftUI sample in `bindings/ios/Sample/`
+- Rust: the `synth` example in `runtime/linnet-tts/examples/`
+- PyTorch reference: [`python/`](python/README.md)
 
 | voice | text | audio |
 |---|---|---|
