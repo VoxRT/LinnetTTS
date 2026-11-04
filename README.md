@@ -121,10 +121,11 @@ Model weights are not in this repository and are not bundled in any package. Dow
 
 | file | purpose |
 |---|---|
+| `linnet-en-35m-weights-v1.tar.gz` | everything below in one archive with the directory layout (`voices/` inside); unpack and run `sha256sum -c SHA256SUMS` |
 | `linnet-en-35m.fp16.safetensors` | runtime weights (fp16 matrices, ~83 MB); what the Rust runtime and every binding load |
 | `linnet-en-35m.safetensors` | fp32 reference weights (~166 MB) for `linnet_tts_torch` and the golden tests |
 | `tokenizer.model` | SentencePiece model |
-| `voices/<name>.npy` | built-in voices: float32 `[T, 48]` voice-prompt latents |
+| `voices/<name>.npy` | built-in voices: float32 `[T, 48]` voice-prompt latents (attached to the release as `linnet-en-f1.npy`, `linnet-en-m1.npy`; put them under `local/voices/`) |
 | `SHA256SUMS` | checksums of the files above; verify with `sha256sum -c SHA256SUMS` before use |
 | `WEIGHTS_LICENSE.md`, `model-card.md` | license and model card of the weights |
 
