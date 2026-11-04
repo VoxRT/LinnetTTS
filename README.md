@@ -91,7 +91,18 @@ flow LM 31.5 M including the 3.1 M text table, decoder 9.9 M; 38.4 M outside the
 
    See `python/README.md`.
 
-5. **Tests.** With the files in `local/` the Rust, wheel, Android and iOS tests find them on their own;
+5. **Platform bindings.** The same model, voice and streaming session on every platform, each with its own README,
+   install instructions and sample code:
+
+   - Linux C / C++: [`bindings/linux/`](bindings/linux/README.md), tarball `linnet-tts-<version>-linux-{x86_64,aarch64}.tar.gz`
+     on the GitHub release (`.so`, `.a`, header, `synth.c` and `stream.c` examples)
+   - Android (Kotlin): [`bindings/android/`](bindings/android/README.md), AAR `linnet-tts-<version>.aar` on the GitHub release,
+     sample app in `bindings/android/sample/`
+   - iOS / macOS (Swift): [`bindings/ios/`](bindings/ios/README.md), `.package(url: "https://github.com/VoxRT/LinnetTTS.git", from: "0.1.0")`,
+     SwiftUI sample in `bindings/ios/Sample/`
+   - Python: the wheel above ([`bindings/python/`](bindings/python/README.md)); Rust: the `linnet-tts` crate in `runtime/`
+
+6. **Tests.** With the files in `local/` the Rust, wheel, Android and iOS tests find them on their own;
    `tests/test_ref_goldens.py` needs `LINNET_WEIGHTS` and `LINNET_TOKENIZER` set explicitly (it is skipped otherwise). The
    environment variables redirect the tests to one file each or to a whole directory:
 
@@ -112,15 +123,7 @@ flow LM 31.5 M including the 3.1 M text table, decoder 9.9 M; 38.4 M outside the
 ## Examples
 
 Four utterances made with the released weights and the default parameters (`temp` 0.3, `cfg` 2.0, `seed` 0); the
-files are in `examples/audio/` together with the command that reproduces them. The same synthesis is available from every
-channel, each with its own README and sample code:
-
-- Linux C / C++: [`bindings/linux/`](bindings/linux/README.md) (`.so`/`.a` + header, `synth.c` and `stream.c` examples)
-- Python wheel `linnet-tts`: [`bindings/python/`](bindings/python/README.md)
-- Android AAR (Kotlin): [`bindings/android/`](bindings/android/README.md) and the sample app in `bindings/android/sample/`
-- iOS / macOS Swift package: [`bindings/ios/`](bindings/ios/README.md) and the SwiftUI sample in `bindings/ios/Sample/`
-- Rust: the `synth` example in `runtime/linnet-tts/examples/`
-- PyTorch reference: [`python/`](python/README.md)
+files are in `examples/audio/` together with the command that reproduces them.
 
 | voice | text | audio |
 |---|---|---|
