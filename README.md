@@ -107,10 +107,19 @@ flow LM 31.5 M including the 3.1 M text table, decoder 9.9 M; 38.4 M outside the
 
 ## Examples
 
-`examples/audio/` holds four utterances made with the default parameters (two voices, a plain sentence and one with simple
-numbers), with the texts and the command that reproduces them. The model has no text normalisation: simple digit forms
-are usually read correctly, but dense raw text (currency amounts with decimals, percentages, slash or ISO dates, phone
-numbers, version strings) is sometimes misread or cut short, so convert such text to words before synthesis.
+Four utterances made with the released weights and the default parameters (`temp` 0.3, `cfg` 2.0, `seed` 0); the
+files are in `examples/audio/` together with the command that reproduces them.
+
+| voice | text | audio |
+|---|---|---|
+| `linnet-en-f1` | Good morning, and welcome back. The meeting starts at nine, and the coffee is already on the table. | [linnet-en-f1_plain.wav](examples/audio/linnet-en-f1_plain.wav) |
+| `linnet-en-f1` | There are 24 students in room 12, and the class starts at 9:30. | [linnet-en-f1_numbers.wav](examples/audio/linnet-en-f1_numbers.wav) |
+| `linnet-en-m1` | Good morning, and welcome back. The meeting starts at nine, and the coffee is already on the table. | [linnet-en-m1_plain.wav](examples/audio/linnet-en-m1_plain.wav) |
+| `linnet-en-m1` | There are 24 students in room 12, and the class starts at 9:30. | [linnet-en-m1_numbers.wav](examples/audio/linnet-en-m1_numbers.wav) |
+
+The model has no text normalisation. Simple digit forms such as the ones above are usually read correctly; dense raw text
+(currency amounts with decimals, percentages, slash or ISO dates, phone numbers, version strings) is sometimes misread or
+cut short, so convert such text to words before synthesis.
 
 ## Performance
 
