@@ -115,7 +115,7 @@ Documents directory; weights are not bundled. `UIFileSharingEnabled` and `LSSupp
 on, so the folder is visible in Finder (device > Files tab, drag the files onto the app), in the Files app and
 in Xcode (Window > Devices and Simulators > the app > Download/Replace Container).
 
-Simulator (the model files are copied from `../../local/`; `local/` = the unpacked weights release, see the root
+Simulator (the model files are copied from `../../../local/`, relative to `bindings/ios/Sample`; `local/` = the unpacked weights release, see the root
 README):
 
 ```sh
@@ -124,8 +124,8 @@ xcodebuild -scheme LinnetSample -configuration Release -destination 'platform=iO
 xcrun simctl boot "iPhone 17 Pro"
 xcrun simctl install booted build/Build/Products/Release-iphonesimulator/LinnetSample.app   # with -derivedDataPath build above
 C=$(xcrun simctl get_app_container booted com.voxrt.linnet.sample data)
-cp ../../local/linnet-en-35m.fp16.safetensors ../../local/tokenizer.model "$C/Documents/"
-cp ../../local/voices/linnet-en-f1.npy "$C/Documents/voice.npy"
+cp ../../../local/linnet-en-35m.fp16.safetensors ../../../local/tokenizer.model "$C/Documents/"
+cp ../../../local/voices/linnet-en-f1.npy "$C/Documents/voice.npy"
 xcrun simctl launch --console-pty booted com.voxrt.linnet.sample -autospeak "Hello there." -repeat 3
 ```
 

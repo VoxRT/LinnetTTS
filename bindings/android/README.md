@@ -108,13 +108,13 @@ The AAR `linnet-tts-<version>.aar` is attached to each GitHub release (no Maven 
 app, or build it here and publish it to the local Maven repository:
 
 ```sh
-./gradlew :linnet-tts:publishToMavenLocal     # com.voxrt.linnet:linnet-tts:0.1.0 in ~/.m2
+./gradlew :linnet-tts:publishToMavenLocal     # com.voxrt.linnet:linnet-tts:0.1.1 in ~/.m2
 ```
 
 ```kotlin
 // settings.gradle.kts: repositories { mavenLocal(); google(); mavenCentral() }
-dependencies { implementation("com.voxrt.linnet:linnet-tts:0.1.0") }
-// or: implementation(files("libs/linnet-tts-0.1.0.aar"))   // the release asset (a local build is linnet-tts-release.aar)
+dependencies { implementation("com.voxrt.linnet:linnet-tts:0.1.1") }
+// or: implementation(files("libs/linnet-tts-0.1.1.aar"))   // the release asset (a local build is linnet-tts-release.aar)
 ```
 
 The AAR carries `consumer-rules.pro`, so R8 in the app keeps `LinnetNative` (whose `external fun`s are instance

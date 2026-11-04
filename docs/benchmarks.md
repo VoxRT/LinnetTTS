@@ -18,16 +18,17 @@ speed, latency and footprint.
   processing and, for Linnet, the prime pass and the Python loop, so it is higher than the per-step figure in the README.
 - First audio = time from the call to the first chunk the API hands back, short text / long text, 1 thread.
 - Peak RSS = `ru_maxrss` of the Python process (interpreter and framework included).
+- Sizes are decimal megabytes (10^6 bytes): the Linnet fp16 file is 83 075 620 bytes.
 
 ## Results
 
 | model | params | weights on disk | voice cloning | streaming | RTF, 1 thread | RTF, 4 threads | first audio, 1 thread | peak RSS |
 |---|---|---|---|---|---|---|---|---|
-| Linnet `linnet-en-35m`, fp16, Rust runtime | 41 M | 79 MB | yes | every 80 ms | 10.6 % | 3.4 % | 87 / 133 ms | 187 MB |
-| pocket-tts 4.0.1 (Kyutai), PyTorch | 100 M | 224 MB | yes | every 80 ms | 23.8 % (2 cores) | 24.1 % | 71 / 82 ms | 968 MB |
-| Kokoro-82M v1.0, ONNX fp32 | 81 M | 310 MB + 28 MB voices | no | no | 51.7 % | 17.2 % | 1.5 / 9.6 s | 1246 MB |
-| Piper `en_US-ljspeech-medium`, ONNX | 16 M | 61 MB | no | per sentence | 5.8 % | 2.1 % | 180 / 283 ms | 503 MB |
-| Piper `en_US-ljspeech-high`, ONNX | 28 M | 109 MB | no | per sentence | 42.5 % | 12.4 % | 1.4 / 2.1 s | 639 MB |
+| Linnet `linnet-en-35m`, fp16, Rust runtime | 41 M | 83 MB | yes | every 80 ms | 10.6 % | 3.4 % | 87 / 133 ms | 187 MB |
+| pocket-tts 4.0.1 (Kyutai), PyTorch | 100 M | 236 MB | yes | every 80 ms | 23.8 % (2 cores) | 24.1 % | 71 / 82 ms | 968 MB |
+| Kokoro-82M v1.0, ONNX fp32 | 81 M | 326 MB + 28 MB voices | no | no | 51.7 % | 17.2 % | 1.5 / 9.6 s | 1246 MB |
+| Piper `en_US-ljspeech-medium`, ONNX | 16 M | 64 MB | no | per sentence | 5.8 % | 2.1 % | 180 / 283 ms | 503 MB |
+| Piper `en_US-ljspeech-high`, ONNX | 28 M | 114 MB | no | per sentence | 42.5 % | 12.4 % | 1.4 / 2.1 s | 639 MB |
 
 Notes:
 

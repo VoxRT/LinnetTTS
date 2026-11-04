@@ -19,7 +19,7 @@
 //! reference file loads too but is slower and samples a different
 //! trajectory, see `docs/weights-format.md`); the tokenizer is a SentencePiece
 //! `.model` file; voices are `[T, 48]` `.npy` latents. As a dependency:
-//! `linnet-tts = { git = "https://github.com/VoxRT/LinnetTTS", tag = "v0.1.0" }`. All arithmetic accumulates
+//! `linnet-tts = { git = "https://github.com/VoxRT/LinnetTTS", tag = "v0.1.1" }`. All arithmetic accumulates
 //! in f32 through the kernels of `linnet-ops`.
 
 #![allow(clippy::needless_range_loop)]

@@ -52,7 +52,7 @@ flow LM 31.5 M including the 3.1 M text table, decoder 9.9 M; 38.4 M outside the
 
    `local/` is gitignored: nothing you put there is committed.
 
-2. **Rust runtime.** As a dependency: `linnet-tts = { git = "https://github.com/VoxRT/LinnetTTS", tag = "v0.1.0" }` (the crate
+2. **Rust runtime.** As a dependency: `linnet-tts = { git = "https://github.com/VoxRT/LinnetTTS", tag = "v0.1.1" }` (the crate
    is not on crates.io; see the crate docs with `cargo doc --no-deps` in `runtime/`). The `synth` example takes the weights, the tokenizer, a voice, the text and an output WAV, followed by
    the optional `temp` (0.3), `cfg` (2.0), `seed` (0) and `threads` (0 = automatic):
 
@@ -96,11 +96,11 @@ flow LM 31.5 M including the 3.1 M text table, decoder 9.9 M; 38.4 M outside the
 5. **Platform bindings.** The same model, voice and streaming session on every platform, each with its own README,
    install instructions and sample code:
 
-   - Linux C / C++: [`bindings/linux/`](bindings/linux/README.md), tarball `linnet-tts-<version>-linux-{x86_64,aarch64}.tar.gz`
+   - Linux C / C++: [`bindings/linux/`](bindings/linux/README.dist.md), tarball `linnet-tts-<version>-linux-{x86_64,aarch64}.tar.gz`
      on the GitHub release (`.so`, `.a`, header, `synth.c` and `stream.c` examples)
    - Android (Kotlin): [`bindings/android/`](bindings/android/README.md), AAR `linnet-tts-<version>.aar` on the GitHub release,
      sample app in `bindings/android/sample/`
-   - iOS / macOS (Swift): [`bindings/ios/`](bindings/ios/README.md), `.package(url: "https://github.com/VoxRT/LinnetTTS.git", from: "0.1.0")`,
+   - iOS (Swift; the xcframework also carries a macOS slice for host builds and tests, not a supported product): [`bindings/ios/`](bindings/ios/README.md), `.package(url: "https://github.com/VoxRT/LinnetTTS.git", from: "0.1.0")`,
      SwiftUI sample in `bindings/ios/Sample/`
    - Python: the wheel above ([`bindings/python/`](bindings/python/README.md)); Rust: the `linnet-tts` crate in `runtime/`
 
@@ -165,14 +165,15 @@ First audio arrives 50–130 ms after the text on the phones and about 250 ms in
 Same machine (i9-13900K, one performance core per thread), each model through its published Python package, three English
 texts, median of three runs. RTF = generation time / audio duration, including text processing and the prime pass. Method,
 versions and the reproduction script: `docs/benchmarks.md`, `tools/bench_cpu_tts.py`. Speed only; quality is not measured here.
+File sizes are decimal megabytes (10^6 bytes), as in the weights table below.
 
 | model | params | weights | cloning | streaming | RTF, 1 thread | RTF, 4 threads | first audio (short / long text) | peak RSS |
 |---|---|---|---|---|---|---|---|---|
-| Linnet `linnet-en-35m` (fp16, Rust) | 41 M | 79 MB | yes | every 80 ms | 10.6 % | 3.4 % | 87 / 133 ms | 187 MB |
-| pocket-tts 4.0.1 (PyTorch) | 100 M | 224 MB | yes | every 80 ms | 23.8 % (2 cores) | 24.1 % | 71 / 82 ms | 968 MB |
-| Kokoro-82M (ONNX fp32) | 81 M | 338 MB | no | no | 51.7 % | 17.2 % | 1.5 / 9.6 s | 1246 MB |
-| Piper `en_US-ljspeech-medium` (ONNX) | 16 M | 61 MB | no | per sentence | 5.8 % | 2.1 % | 180 / 283 ms | 503 MB |
-| Piper `en_US-ljspeech-high` (ONNX) | 28 M | 109 MB | no | per sentence | 42.5 % | 12.4 % | 1.4 / 2.1 s | 639 MB |
+| Linnet `linnet-en-35m` (fp16, Rust) | 41 M | 83 MB | yes | every 80 ms | 10.6 % | 3.4 % | 87 / 133 ms | 187 MB |
+| pocket-tts 4.0.1 (PyTorch) | 100 M | 236 MB | yes | every 80 ms | 23.8 % (2 cores) | 24.1 % | 71 / 82 ms | 968 MB |
+| Kokoro-82M (ONNX fp32) | 81 M | 354 MB | no | no | 51.7 % | 17.2 % | 1.5 / 9.6 s | 1246 MB |
+| Piper `en_US-ljspeech-medium` (ONNX) | 16 M | 64 MB | no | per sentence | 5.8 % | 2.1 % | 180 / 283 ms | 503 MB |
+| Piper `en_US-ljspeech-high` (ONNX) | 28 M | 114 MB | no | per sentence | 42.5 % | 12.4 % | 1.4 / 2.1 s | 639 MB |
 
 ## Weights
 
@@ -182,8 +183,8 @@ Model weights are not in this repository and are not bundled in any package. Dow
 | file | purpose |
 |---|---|
 | `linnet-en-35m-weights-v1.tar.gz` | everything below in one archive with the directory layout (`voices/` inside); unpack and run `sha256sum -c SHA256SUMS` |
-| `linnet-en-35m.fp16.safetensors` | runtime weights (fp16 matrices, ~83 MB); what the Rust runtime and every binding load |
-| `linnet-en-35m.safetensors` | fp32 reference weights (~166 MB) for `linnet_tts_torch` and the golden tests |
+| `linnet-en-35m.fp16.safetensors` | runtime weights (fp16 matrices, 83 MB = 83 075 620 bytes); what the Rust runtime and every binding load |
+| `linnet-en-35m.safetensors` | fp32 reference weights (166 MB) for `linnet_tts_torch` and the golden tests |
 | `tokenizer.model` | SentencePiece model |
 | `voices/<name>.npy` | built-in voices: float32 `[T, 48]` voice-prompt latents (attached to the release as `linnet-en-f1.npy`, `linnet-en-m1.npy`; put them under `local/voices/`) |
 | `SHA256SUMS` | checksums of the files above; verify with `sha256sum -c SHA256SUMS` (macOS: `shasum -a 256 -c`) before use |
