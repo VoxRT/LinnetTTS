@@ -146,6 +146,7 @@ pub unsafe extern "C" fn linnet_model_load(
             return LINNET_ERR_INVALID_ARG;
         };
         if out_model.is_null() {
+            set_error("out_model is null");
             return LINNET_ERR_INVALID_ARG;
         }
         match Linnet::load(w, t) {
@@ -183,6 +184,7 @@ pub unsafe extern "C" fn linnet_sample_rate(model: *const linnet_model) -> u32 {
 pub unsafe extern "C" fn linnet_set_threads(model: *mut linnet_model, threads: c_int) -> c_int {
     guard(|| {
         if model.is_null() || threads < 0 {
+            set_error("model is null or threads < 0");
             return LINNET_ERR_INVALID_ARG;
         }
         (*model).inner.set_threads(threads as usize);
@@ -217,6 +219,7 @@ pub unsafe extern "C" fn linnet_voice_load(path: *const c_char, out_voice: *mut 
             return LINNET_ERR_INVALID_ARG;
         };
         if out_voice.is_null() {
+            set_error("out_voice is null");
             return LINNET_ERR_INVALID_ARG;
         }
         match VoiceLatents::load(p) {
@@ -229,7 +232,9 @@ pub unsafe extern "C" fn linnet_voice_load(path: *const c_char, out_voice: *mut 
     })
 }
 
-/// Build a voice from an in-memory `[frames × dim]` f32 buffer.
+/// Build a voice from an in-memory `[frames × dim]` f32 buffer. The width
+/// is checked against the model when a session is created (a voice is not
+/// tied to a model here).
 #[no_mangle]
 pub unsafe extern "C" fn linnet_voice_from_latents(
     latents: *const f32,
@@ -239,6 +244,7 @@ pub unsafe extern "C" fn linnet_voice_from_latents(
 ) -> c_int {
     guard(|| {
         if latents.is_null() || out_voice.is_null() || frames == 0 || dim == 0 {
+            set_error("latents/out_voice is null or frames/dim is 0");
             return LINNET_ERR_INVALID_ARG;
         }
         let Some(n) = frames.checked_mul(dim) else {
@@ -275,6 +281,7 @@ pub unsafe extern "C" fn linnet_session_new(
 ) -> c_int {
     guard(|| {
         if model.is_null() || voice.is_null() || out_session.is_null() {
+            set_error("model, voice or out_session is null");
             return LINNET_ERR_INVALID_ARG;
         }
         let m: &'static Linnet = &(*model).inner;
@@ -303,6 +310,7 @@ pub unsafe extern "C" fn linnet_session_free(session: *mut linnet_session) {
 pub unsafe extern "C" fn linnet_session_prime(session: *mut linnet_session, text: *const c_char) -> c_int {
     guard(|| {
         if session.is_null() {
+            set_error("session is null");
             return LINNET_ERR_INVALID_ARG;
         }
         let Some(t) = cstr(text) else {
@@ -330,6 +338,7 @@ pub unsafe extern "C" fn linnet_session_step(
 ) -> c_int {
     guard(|| {
         if session.is_null() || out_written.is_null() || (out_pcm.is_null() && cap > 0) {
+            set_error("session/out_written is null, or out_pcm is null with cap > 0");
             return LINNET_ERR_INVALID_ARG;
         }
         *out_written = 0;
@@ -365,6 +374,7 @@ pub unsafe extern "C" fn linnet_synthesize(
 ) -> c_int {
     guard(|| {
         if model.is_null() || voice.is_null() || out_written.is_null() || (out_pcm.is_null() && cap > 0) {
+            set_error("model/voice/out_written is null, or out_pcm is null with cap > 0");
             return LINNET_ERR_INVALID_ARG;
         }
         let Some(t) = cstr(text) else {

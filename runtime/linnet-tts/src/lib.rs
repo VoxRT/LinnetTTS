@@ -4,7 +4,7 @@
 //! ```no_run
 //! use linnet_tts::{Linnet, Session, SynthParams, VoiceLatents};
 //!
-//! let model = Linnet::load("linnet-en-35m.safetensors", "tokenizer.model")?;
+//! let model = Linnet::load("linnet-en-35m.fp16.safetensors", "tokenizer.model")?;
 //! let voice = VoiceLatents::load("voice.npy")?;
 //! let mut session = Session::new(&model, &voice, SynthParams::default())?;
 //! session.prime("Hello there.")?;
@@ -15,9 +15,11 @@
 //! # Ok::<(), linnet_tts::Error>(())
 //! ```
 //!
-//! Weights are a single safetensors file (fp32 or fp16 matrices, see
-//! `docs/weights-format.md`); the tokenizer is a SentencePiece `.model`
-//! file; voices are `[T, 48]` `.npy` latents. All arithmetic accumulates
+//! Weights are a single safetensors file (the fp16 runtime file; the fp32
+//! reference file loads too but is slower and samples a different
+//! trajectory, see `docs/weights-format.md`); the tokenizer is a SentencePiece
+//! `.model` file; voices are `[T, 48]` `.npy` latents. As a dependency:
+//! `linnet-tts = { git = "https://github.com/VoxRT/LinnetTTS", tag = "v0.1.0" }`. All arithmetic accumulates
 //! in f32 through the kernels of `linnet-ops`.
 
 #![allow(clippy::needless_range_loop)]

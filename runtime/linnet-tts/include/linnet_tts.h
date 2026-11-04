@@ -57,7 +57,9 @@ size_t linnet_samples_per_step(const linnet_model *model);
 int linnet_set_threads(linnet_model *model, int threads);
 int linnet_threads(const linnet_model *model);
 
-/* Voice: [T, 48] float32 latents, .npy file or in-memory buffer. */
+/* Voice: [T, 48] float32 latents, .npy file or in-memory buffer. The width is
+ * validated against the model by linnet_session_new / linnet_synthesize
+ * (LINNET_ERR_INVALID_ARG), not here. */
 int linnet_voice_load(const char *path, linnet_voice **out_voice);
 int linnet_voice_from_latents(const float *latents, size_t frames, size_t dim, linnet_voice **out_voice);
 void linnet_voice_free(linnet_voice *voice);

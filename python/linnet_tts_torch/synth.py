@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 import dataclasses
 import json
 from collections.abc import Iterator
@@ -92,7 +94,22 @@ class Linnet:
 
     def _voice(self, voice_latents) -> torch.Tensor:
         v = torch.as_tensor(np.asarray(voice_latents) if not torch.is_tensor(voice_latents) else voice_latents)
+        ld = self.lm.cfg.latent_dim
+        if v.ndim != 2 or v.shape[1] != ld or v.shape[0] == 0:
+            raise ValueError(f"voice latents must be [T, {ld}] with T >= 1, got {tuple(v.shape)}")
         return v.to(self.device, torch.float32)
+
+    @staticmethod
+    def _check(text: str, temp: float, cfg: float, max_frames: int) -> None:
+        """The same argument rules as the Rust runtime and the `linnet-tts` wheel."""
+        if not text or not text.strip():
+            raise ValueError("empty input: the text is blank")
+        if not (temp >= 0.0 and math.isfinite(temp)):
+            raise ValueError(f"temp {temp} must be finite and >= 0")
+        if not math.isfinite(cfg):
+            raise ValueError("cfg must be finite")
+        if max_frames < 1:
+            raise ValueError("max_frames must be at least 1")
 
     @torch.no_grad()
     def generate(
@@ -106,6 +123,7 @@ class Linnet:
         generator: torch.Generator | None = None,
     ) -> torch.Tensor:
         """Sample LM latents for `text` -> [T, 48] in codec space (T <= max_frames)."""
+        self._check(text, temp, cfg, max_frames)
         tokens = self.tokenizer.encode_tensor(text)
         frames = list(
             self.lm.generate(
@@ -149,6 +167,7 @@ class Linnet:
         the first chunk is shorter by `OUTPUT_DELAY` samples and the final chunk is the delay's
         worth of zeros.
         """
+        self._check(text, temp, cfg, max_frames)
         tokens = self.tokenizer.encode_tensor(text)
         st = self.decoder.init_stream(1, self.device)
         skip = OUTPUT_DELAY

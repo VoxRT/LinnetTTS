@@ -4,6 +4,24 @@ All notable changes to this project are documented in this file. The format foll
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/).
 Code releases are tagged `vX.Y.Z`; model weights are released separately as `weights-vN` (see `README.md`, "Weights").
 
+## [Unreleased]
+
+### Fixed
+
+- C API: every argument error sets the message of `linnet_last_error`; the header states where a voice's width is validated.
+- Linux examples: `wav.h` converts float to 16-bit PCM exactly like the runtime's `synth` example (round half away from zero),
+  so the C examples reproduce the reference MD5 of the weights release on x86-64.
+- Android `AudioTrackPlayer.drain()` returned only at its deadline on devices whose playback head never reports the last frame;
+  it now returns as soon as the head stops advancing.
+- PyTorch package: blank text, `max_frames < 1`, negative `temp` and a voice of the wrong width raise `ValueError` (same rules
+  as the wheel); the wheel raises `ValueError` for negative `threads`.
+- Documentation after an outside-developer pass over every channel: how to depend on the Rust crate, `soundfile` in the
+  Python snippets, seeds not portable between the wheel and the PyTorch package, fp32-only parity tolerances, rpath for
+  hand-linked C programs, iOS device-build prerequisites and the Swift package tests' binary target, Android first-run
+  notes, and an honest statement on cross-architecture output: bit-identical per platform, below 2e-3 across
+  x86-64 / Apple / Android / Raspberry Pi (the reference MD5 holds on x86-64).
+- A stale prebuilt `_native.abi3.so` is no longer tracked in `bindings/python/`.
+
 ## [0.1.0] - 2026-11-04
 
 First public release of LinnetTTS: lightweight on-device English text-to-speech (flow LM over a 25 Hz continuous-latent

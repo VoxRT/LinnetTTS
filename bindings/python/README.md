@@ -7,7 +7,7 @@ fp16 weights, no PyTorch. The extension module is built from the Rust crate `run
 ## Install
 
 ```sh
-pip install linnet-tts
+pip install linnet-tts soundfile      # soundfile only for writing WAV files in the snippets
 ```
 
 Wheels on PyPI: manylinux 2.17 x86_64 and aarch64, macOS 11+ on Apple silicon; no Windows, Intel-macOS or source
@@ -49,7 +49,8 @@ The release profile uses fat LTO and strips symbols; the wheel is ~0.4 MB. Runti
 
 ## Test
 
-The tests need the model assets (gitignored). Point `LINNET_ASSETS` at a directory holding
+With the wheel from PyPI: clone the repository, install `pytest`, and run `pytest bindings/python/tests` from its root (the
+tests import the installed `linnet_tts`). The tests need the model assets (gitignored). Point `LINNET_ASSETS` at a directory holding
 `linnet-en-35m.fp16.safetensors`, `tokenizer.model` and `voices/linnet-en-f1.npy` (default: `../../local`;
 `local/` = the unpacked weights release, see the root README at https://github.com/VoxRT/LinnetTTS):
 

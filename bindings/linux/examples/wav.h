@@ -2,6 +2,7 @@
 #ifndef LINNET_EXAMPLE_WAV_H
 #define LINNET_EXAMPLE_WAV_H
 
+#include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -32,12 +33,13 @@ static FILE *wav_open(const char *path, uint32_t rate, uint32_t frames) {
   return f;
 }
 
-/* Append float samples as 16-bit PCM. */
+/* Append float samples as 16-bit PCM (clamp to [-1, 1], scale by 32767, round half away from zero: the same
+ * conversion as the runtime's `synth` example, so the WAV matches the reference MD5 of the weights release). */
 static void wav_write(FILE *f, const float *pcm, size_t n) {
   int16_t *buf = (int16_t *)malloc(n * sizeof(int16_t));
   for (size_t i = 0; i < n; i++) {
     float s = pcm[i] < -1.f ? -1.f : pcm[i] > 1.f ? 1.f : pcm[i];
-    buf[i] = (int16_t)(s < 0 ? s * 32768.f - 0.5f : s * 32767.f + 0.5f);
+    buf[i] = (int16_t)roundf(s * 32767.f);
   }
   fwrite(buf, sizeof(int16_t), n, f);
   free(buf);

@@ -2,6 +2,7 @@ __pycache__/
 *.pyc
 .venv/
 python/build/
+bindings/python/python/linnet_tts/*.so
 *.egg-info/
 target/
 *.safetensors

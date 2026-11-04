@@ -19,7 +19,8 @@ channel; see `WEIGHTS_LICENSE.md`.
 ## Threads
 
 Every channel exposes a `threads` setting: `1` runs single-threaded, `0` (the default) picks the fast cores of the
-device on Android/Linux (the big cluster by `cpuinfo_max_freq`, at most 4) and **one thread on Apple platforms**: an
+device on Android/Linux (the big cluster by `cpuinfo_max_freq`, at most 4) and **one thread on Apple platforms** (on an
+M-series Mac a second thread does pay off, about 1.7×; set `threads` explicitly there): an
 Apple-silicon step is already 5-7 ms and splits into ~80 tiny regions, so waking a worker on a second performance core
 costs more than the work (A13: 2 threads 11.4 ms vs 6.7 ms per step, 4 threads 47 ms); the pool only shortens the
 prime pass there, and an app that wants a faster first chunk can set `threads` to the performance-core count. The
@@ -70,8 +71,8 @@ make DIST=../dist/linnet-tts-<version>-linux-x86_64        # or STATIC=1
 ./stream weights.safetensors tokenizer.model voice.npy "Hello there." hello_stream.wav
 ```
 
-Linking by hand: `-Iinclude -Llib -llinnet_tts -lm` (shared) or `lib/liblinnet_tts.a -lpthread -ldl -lm`
-(static).
+Linking by hand: `-Iinclude -Llib -llinnet_tts -lm -Wl,-rpath,'$ORIGIN/lib'` (shared; without the rpath the binary
+only starts with `LD_LIBRARY_PATH=lib`) or `lib/liblinnet_tts.a -lpthread -ldl -lm` (static).
 
 ### Raspberry Pi
 
@@ -81,8 +82,9 @@ weights and a 7.0 s sentence (RTF here = prime pass plus all steps over the audi
 tables in the root README use step / 80 ms): 1 thread 158 ms per step (RTF 242 %); `threads` auto picks all four cores and gives
 59–60 ms per step (RTF 88 %, worst step 63–76 ms), i.e. real time with a small margin; six utterances back to back
 stayed at 59–60 ms while the SoC warmed from 57 to 67 °C. Peak resident memory 160 MB; loading the model from the SD
-card takes about 2.5 s. The reference synthesis of the weights release gave the same MD5 as on x86-64 and Android (same
-FMA kernels; cross-platform equality is observed, not asserted by a test). A Pi Zero 2 W is the floor for
+card takes about 2.5 s warm (5 s cold from the SD card). The audio differs from the x86-64 build by up to 3e-4 absolute (inaudible;
+the released aarch64 library is built against glibc 2.17 whose math functions differ), so the reference MD5 of the weights release
+is not reproduced on the Pi. A Pi Zero 2 W is the floor for
 real time; a Pi 4 or Pi 5 has several times the margin.
 
 ## Python

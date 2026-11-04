@@ -77,17 +77,28 @@ class AudioTrackPlayer(private val sampleRate: Int, bufferMillis: Int = 8000) : 
     /** Block until everything queued so far has been played, then stop. */
     fun drain() {
         if (!started) return
-        // A short silent pad so the tail is not cut by the output latency, then wait until the
-        // playback head has passed everything written (bounded by the queued duration plus a margin).
+        // A short silent pad so the tail is not cut by the output latency. Then stop(): in streaming mode the
+        // track keeps playing what was written, and the playback head advances until the last frame has been
+        // rendered. Some devices never report the head reaching the exact number of frames written, so instead
+        // of waiting for that count, wait until the head stops moving (bounded by the queued duration plus a
+        // margin).
         write(FloatArray(sampleRate / 10))
-        val deadline = System.nanoTime() + (framesWritten * 1_000_000_000L / sampleRate) + 1_000_000_000L
-        while (track.playState == AudioTrack.PLAYSTATE_PLAYING &&
-            (track.playbackHeadPosition.toLong() and 0xffffffffL) < framesWritten &&
-            System.nanoTime() < deadline
-        ) {
+        val total = framesWritten
+        val deadline = System.nanoTime() + (total * 1_000_000_000L / sampleRate) + 1_000_000_000L
+        track.stop()
+        var last = -1L
+        var stableSince = System.nanoTime()
+        while (System.nanoTime() < deadline) {
+            val head = track.playbackHeadPosition.toLong() and 0xffffffffL
+            if (head >= total) break
+            if (head != last) {
+                last = head
+                stableSince = System.nanoTime()
+            } else if (System.nanoTime() - stableSince > 150_000_000L) {
+                break // the head has stopped advancing: everything audible has been rendered
+            }
             Thread.sleep(10)
         }
-        track.stop()
         started = false
         framesWritten = 0L
     }

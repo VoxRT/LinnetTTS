@@ -41,7 +41,8 @@ result of `synthesize` with the same parameters and seed.
 `LinnetSession` is single-threaded (drive it from one thread at a time; different sessions may run in parallel).
 Nothing may be closed while another thread is still using it, but a session keeps the weights alive on its
 own, so closing the model before its sessions is safe. Loading (a few hundred ms) and synthesis belong off the
-main thread. `AudioTrackPlayer.write` blocks when the track buffer is full, which paces synthesis to real time.
+main thread. `AudioTrackPlayer.write` blocks only when the 8 s track buffer is full, so a typical utterance is synthesised in
+one burst and playback drains behind it (see `bindings/README.md`, "Playback and step time", for why synthesis is not paced).
 
 **Memory.** The fp16 weights file is 83 MB and stays resident (about 85 MB; roughly twice that transiently while
 loading); a session adds about 20 MB of KV caches with the default `maxFrames` and guidance (half without guidance).
@@ -79,7 +80,8 @@ echo "sdk.dir=/path/to/Android/Sdk" > local.properties   # or export ANDROID_HOM
 ./gradlew :sample:assembleDebug               # -> sample/build/outputs/apk/debug/sample-debug.apk
 ```
 
-`build-native.sh` runs `cargo ndk --platform 24 -t <abi> build --release` (fat LTO, stripped) and removes the
+Consumers of the prebuilt AAR need no NDK; AGP then warns `Unable to strip liblinnet_tts_jni.so` (the library is already
+stripped; harmless). `build-native.sh` runs `cargo ndk --platform 24 -t <abi> build --release` (fat LTO, stripped) and removes the
 runtime's own cdylib that cargo-ndk copies alongside; the Gradle build fails with a pointer to the script when
 the `.so` files are missing. Native library sizes (0.1.0): arm64-v8a 756 KB, x86_64 805 KB. Nothing but
 `libc`, `libm` and `libdl` is required at run time; minSdk 24.
@@ -138,9 +140,11 @@ adb push ../../local/voices/linnet-en-f1.npy /data/local/tmp/voice.npy
 adb shell run-as com.voxrt.linnet.sample sh -c 'mkdir -p files && cp /data/local/tmp/linnet-en-35m.fp16.safetensors /data/local/tmp/tokenizer.model /data/local/tmp/voice.npy files/'
 ```
 
-(`run-as` works for the debug build. Model files are distributed separately, see `WEIGHTS_LICENSE.md`.)
+(`run-as` works for the debug build and needs the device unlocked and the app launched once after installation; before that
+`run-as` reports `couldn't stat /data/user/0/<package>`. Model files are distributed separately, see `WEIGHTS_LICENSE.md`.)
 
-Sample app on a Snapdragon 662 (Redmi 9T), 7.0 s sentence, `threads` auto (4 big cores), playback on: 15.9-18.4 ms per step (RTF 20-23 %,
+Sample app on a Snapdragon 662 (Redmi 9T), 7.0 s sentence, `threads` auto (4 big cores), playback on, warm (the first utterance of a
+process is slower: 17-19 ms per step with a 55-70 ms worst step and 300-430 ms to the first chunk): 15.9-18.4 ms per step (RTF 20-23 %,
 steps over audio duration as the app computes it; the root README tables use step / 80 ms),
 worst step 33-39 ms, first chunk 244-260 ms after the Speak tap; the big-core affinity of the pool (see `bindings/README.md`, "Threads") is
 what brings the app close to the 14.3 ms of the command-line build.

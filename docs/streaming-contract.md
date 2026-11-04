@@ -31,7 +31,10 @@ shared golden vectors in `tests/goldens/` pin it down.
 Given the same weights, text, voice file, `temp`, `cfg`, `max_frames` and the same sequence of Gaussian draws (one `[48]` vector per
 step, drawn before the EOS check), Python and Rust must produce identical latents (fp32, tolerance 1e-4); the decoder alone must match
 within 1e-4 abs on identical latents, and the end-to-end audio within 1e-2 abs (SNR ≥ 40 dB), because the decoder amplifies
-latent-level differences (measured: latents ≤ 5e-5, audio ≤ 1.4e-4, SNR ≥ 70 dB on the goldens).
+latent-level differences (measured: latents ≤ 5e-5, audio ≤ 1.4e-4, SNR ≥ 70 dB on the goldens). These tolerances are for the
+fp32 reference weights; the fp16 runtime file follows a different sampling trajectory (end-to-end SNR of 15–35 dB against the fp32
+goldens is normal and is reported, not gated). The two packages' random generators are different (Rust: xoshiro256**, Python:
+`torch.Generator`), so the same seed does not give the same utterance across them; parity is checked with recorded noise.
 The Rust runtime reads the noise from a seeded generator; the goldens store the noise so both sides can be checked against each other.
 
 The Rust runtime's output does not depend on its thread count (`threads` in the parameters, 1 = single-threaded, 0 = automatic). Work

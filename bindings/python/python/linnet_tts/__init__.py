@@ -34,6 +34,14 @@ def _to_array(data: bytes) -> np.ndarray:
     return np.frombuffer(data, dtype=np.float32).copy()
 
 
+
+def _threads(threads: int) -> int:
+    """Validate a thread count: 0 = automatic, otherwise >= 1 (explicit values above 32 are capped by the runtime)."""
+    t = int(threads)
+    if t < 0:
+        raise ValueError(f"threads must be >= 0 (0 = automatic), got {t}")
+    return t
+
 class Voice:
     """Voice prompt latents: a ``[frames, dim]`` float32 matrix."""
 
@@ -168,7 +176,7 @@ class Model:
 
         The audio is identical for every value; only the speed changes.
         """
-        self._m.set_threads(int(threads))
+        self._m.set_threads(_threads(threads))
 
     def load_voice(self, path: _PathLike) -> Voice:
         """Load a ``.npy`` voice file and check its width against the model."""
@@ -197,7 +205,7 @@ class Model:
             max_frames=max_frames,
             eos_threshold=eos_threshold,
             seed=seed,
-            threads=threads,
+            threads=_threads(threads),
         )
         return _to_array(data)
 
@@ -220,7 +228,7 @@ class Model:
                 max_frames=max_frames,
                 eos_threshold=eos_threshold,
                 seed=seed,
-                threads=threads,
+                threads=_threads(threads),
             )
         )
 

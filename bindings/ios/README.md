@@ -85,8 +85,8 @@ dist/LinnetTTS.xcframework.zip            + .sha256 and .checksum (swift package
 LinnetTTS/LinnetTTS.xcframework           copy for the package's local binary target
 ```
 
-Slice sizes (stripped; measured on 0.0.1, unchanged in 0.1.0): ios-arm64 12.6 MB, simulator 25 MB (two architectures), macos-arm64 12.8 MB; zip
-about 20 MB. Deployment targets: iOS 15, macOS 12 (`IPHONEOS_DEPLOYMENT_TARGET` / `MACOSX_DEPLOYMENT_TARGET`
+Slice sizes (stripped, 0.1.0 release build): ios-arm64 14.3 MB, simulator 28.5 MB (two architectures), macos-arm64 14.5 MB; zip
+21 MB. Deployment targets: iOS 15, macOS 12 (`IPHONEOS_DEPLOYMENT_TARGET` / `MACOSX_DEPLOYMENT_TARGET`
 override them). The macOS slice exists so that `swift build` / `swift test` work on an Apple-silicon host; it is
 not a supported product.
 
@@ -120,9 +120,9 @@ README):
 
 ```sh
 cd bindings/ios/Sample
-xcodebuild -scheme LinnetSample -configuration Release -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build
+xcodebuild -scheme LinnetSample -configuration Release -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath build build
 xcrun simctl boot "iPhone 17 Pro"
-xcrun simctl install booted <DerivedData>/Build/Products/Release-iphonesimulator/LinnetSample.app
+xcrun simctl install booted build/Build/Products/Release-iphonesimulator/LinnetSample.app   # with -derivedDataPath build above
 C=$(xcrun simctl get_app_container booted com.voxrt.linnet.sample data)
 cp ../../local/linnet-en-35m.fp16.safetensors ../../local/tokenizer.model "$C/Documents/"
 cp ../../local/voices/linnet-en-f1.npy "$C/Documents/voice.npy"
@@ -136,6 +136,12 @@ Device: `LINNET_DEVICE=<udid> DEVELOPMENT_TEAM=<team> bindings/ios/device-smoke.
 model files with `xcrun devicectl device copy to ... --domain-type appDataContainer` and launches the autospeak
 runs. The team id is never committed: pass `DEVELOPMENT_TEAM` on the command line or put
 `DEVELOPMENT_TEAM = <team>` into the untracked `bindings/ios/local.xcconfig` (included by `Sample/Config.xcconfig`).
+Prerequisites for a device build from a script or an SSH session: the team's Apple ID signed into Xcode, and the login
+keychain unlocked for that session (`security unlock-keychain ~/Library/Keychains/login.keychain-db`; otherwise codesign
+fails with `errSecInternalComponent`). `xcodebuild -destination id=<udid>` takes the UDID that `xcodebuild -showdestinations`
+prints, not the CoreDevice identifier of `devicectl list devices`; when launching with
+`xcrun devicectl device process launch --device <id> --console com.voxrt.linnet.sample -- -autospeak "..."`, the `--`
+separates the app's arguments from devicectl's own.
 
 ## Tests
 
@@ -145,6 +151,9 @@ threads 1 / 4 / auto bit-exact, seed determinism, a timing report per thread cou
 sustained run with an MD5 of the audio (for cross-device comparison). The model files are looked up in
 `$LINNET_ASSETS`, in the test bundle's `Assets/` folder, then in `<repo>/local/`; without them the model tests
 are skipped.
+
+The local package's binary target is `LinnetTTS/LinnetTTS.xcframework`, which is not in git: build it with
+`bindings/ios/build-xcframework.sh` (needs Rust) or unzip the release asset `LinnetTTS-<version>.xcframework.zip` there.
 
 ```sh
 cd bindings/ios/LinnetTTS
@@ -159,10 +168,11 @@ app, with `LinnetTTS/Tests/LinnetTTSTests/Assets/` copied in as a resource folde
 and the run; the files are ignored by git).
 
 Results (measured on 0.0.1; unchanged in 0.1.0): all tests pass on the macOS host (Apple M5) and on the iPhone 17 Pro simulator, both as the
-package tests and as `LinnetSampleTests`; the audio MD5 is identical everywhere, for every thread count. Host
-timings (release, 68-step sentence; RTF in this section = prime pass plus all steps over the audio duration, as the test
-prints it, while the root README tables use step / 80 ms): threads 1 mean 3.3 ms per step (RTF 5 %), threads 4 mean 3.7-4.7 ms (the
-per-step work is too small on an M5 for the pool to pay off). The simulator runs on the same host CPU and gives
+package tests and as `LinnetSampleTests`; the audio MD5 is identical on every Apple device and for every thread count
+(it differs from the x86-64 reference MD5 of the weights release: the platforms' math libraries differ below 2e-3). Host
+timings (release, 66-step sentence; RTF in this section = prime pass plus all steps over the audio duration, as the test
+prints it, while the root README tables use step / 80 ms): threads 1 mean 3.3 ms per step (RTF 5 %), threads 2 mean 1.9 ms,
+threads 4 mean 2.7 ms (two threads pay off on an M5; `auto` still resolves to one thread because it is tuned for the phones). The simulator runs on the same host CPU and gives
 the same numbers in a Release test host; it does not predict a phone. Device runs: `device-smoke.sh` (needs an
 unlocked login keychain on the Mac for `codesign`).
 

@@ -10,6 +10,7 @@ packages have different names and do not collide.
 ## Install
 
 ```sh
+pip install torch --index-url https://download.pytorch.org/whl/cpu   # CPU build of torch (the default index pulls the CUDA build)
 pip install ./python            # from the repository root; needs torch >= 2.1, numpy, sentencepiece, safetensors, soundfile
 ```
 
@@ -33,7 +34,9 @@ sf.write("hello.wav", wav.numpy(), lin.sample_rate)
 the audio chunk by chunk per `docs/streaming-contract.md`: 1200 samples after the first step, 1920 after every
 later one, 720 zeros at the end; the concatenation equals `synthesize` up to float rounding. Pass a seeded
 `torch.Generator` for reproducible sampling. The fp16 runtime file loads as well, but the reference numbers are
-defined on the fp32 file.
+defined on the fp32 file. Seeds are not portable to the `linnet-tts` wheel (different random generators): the same seed
+gives a different, equally valid utterance there. Blank text, `max_frames < 1`, negative `temp` and a voice of the wrong width
+raise `ValueError`, as in the wheel.
 
 ## Tests
 

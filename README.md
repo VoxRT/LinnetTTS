@@ -52,7 +52,8 @@ flow LM 31.5 M including the 3.1 M text table, decoder 9.9 M; 38.4 M outside the
 
    `local/` is gitignored: nothing you put there is committed.
 
-2. **Rust runtime.** The `synth` example takes the weights, the tokenizer, a voice, the text and an output WAV, followed by
+2. **Rust runtime.** As a dependency: `linnet-tts = { git = "https://github.com/VoxRT/LinnetTTS", tag = "v0.1.0" }` (the crate
+   is not on crates.io; see the crate docs with `cargo doc --no-deps` in `runtime/`). The `synth` example takes the weights, the tokenizer, a voice, the text and an output WAV, followed by
    the optional `temp` (0.3), `cfg` (2.0), `seed` (0) and `threads` (0 = automatic):
 
    ```sh
@@ -61,7 +62,8 @@ flow LM 31.5 M including the 3.1 M text table, decoder 9.9 M; 38.4 M outside the
        ../local/voices/linnet-en-f1.npy "Hello from Linnet." hello.wav
    ```
 
-3. **Python wheel** (the Rust runtime as a Python extension, no PyTorch): `pip install linnet-tts`, or build it with
+3. **Python wheel** (the Rust runtime as a Python extension, no PyTorch): `pip install linnet-tts soundfile` (`soundfile` only
+   for writing the WAV in the snippet), or build it with
    `cd bindings/python && maturin build --release` and install the wheel from `target/wheels/`.
 
    ```python
@@ -139,8 +141,10 @@ cut short, so convert such text to words before synthesis.
 ## Performance
 
 Rust runtime, fp16 weights, one step = 80 ms of audio (an LM step plus two decoder frames). Measured without real-time pacing.
-The audio is bit-identical for every thread count; the reference synthesis of the weights release (`MANIFEST.json`,
-`reference_md5`) gave the same MD5 on every device listed.
+On a given platform the audio is bit-identical for every thread count and across runs. Across CPU architectures and C libraries
+(x86-64 AVX2, Apple silicon, Android NEON, Raspberry Pi) the samples differ slightly, below 2e-3 absolute (SNR above 60 dB,
+inaudible), so the MD5 of the reference synthesis in the weights release (`MANIFEST.json`, `reference_md5`) is reproduced
+only by x86-64 builds; use it as a check there.
 
 | device | threads | per step | real-time factor |
 |---|---|---|---|
@@ -168,7 +172,8 @@ Model weights are not in this repository and are not bundled in any package. Dow
 | `linnet-en-35m.safetensors` | fp32 reference weights (~166 MB) for `linnet_tts_torch` and the golden tests |
 | `tokenizer.model` | SentencePiece model |
 | `voices/<name>.npy` | built-in voices: float32 `[T, 48]` voice-prompt latents (attached to the release as `linnet-en-f1.npy`, `linnet-en-m1.npy`; put them under `local/voices/`) |
-| `SHA256SUMS` | checksums of the files above; verify with `sha256sum -c SHA256SUMS` before use |
+| `SHA256SUMS` | checksums of the files above; verify with `sha256sum -c SHA256SUMS` (macOS: `shasum -a 256 -c`) before use |
+| `MANIFEST.json` | contents, sizes and hashes of the files, the metadata of the weight headers, and the x86-64 reference synthesis (text, parameters, MD5) |
 | `WEIGHTS_LICENSE.md`, `model-card.md` | license and model card of the weights |
 
 The runtime needs three files: the fp16 weights, `tokenizer.model` and one voice `.npy`. Check `SHA256SUMS` after

@@ -94,7 +94,8 @@ Please cite the Emilia papers (arXiv 2407.05361, 2501.15907) when citing the dat
 
 ## Performance (Rust runtime, fp16 weights)
 
-One step produces 80 ms of audio (one LM step plus two decoder frames). Output is bit-identical for any thread count. Real-time
+One step produces 80 ms of audio (one LM step plus two decoder frames). Output is bit-identical for any thread count on a given
+platform; across CPU architectures and C libraries the samples differ below 2e-3 absolute (SNR above 60 dB). Real-time
 factor = mean step time / 80 ms; "first audio" is the prime pass plus the first step, measured in a command-line or test harness
 unless stated.
 

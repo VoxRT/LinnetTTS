@@ -22,7 +22,7 @@
 #
 # --verify-runtime builds the `synth` example of runtime/linnet-tts and synthesizes a fixed sentence with the
 # fp16 weights and the first voice; the MD5 of the WAV and the exact parameters are recorded in MANIFEST.json
-# under "reference" so that a device smoke test can compare its output (the runtime's audio is bit-identical
+# under "reference" so that an x86-64 build can compare its output (the runtime's audio is bit-identical
 # across thread counts and across platforms that use the same kernels).
 set -euo pipefail
 
