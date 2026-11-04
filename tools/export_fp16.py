@@ -3,6 +3,9 @@
 (biases, norms, depthwise kernels, layer scales, latent statistics) kept as float32. The
 metadata is copied unchanged.
 
+This is the release tool that produces the published fp16 file. Under the Linnet Weights License a converted copy of the
+published weights made by anyone else is a Modification (see WEIGHTS_LICENSE.md, Sections 1 and 4); use the published fp16 file.
+
     python tools/export_fp16.py --src local/linnet-en-35m.safetensors --dst local/linnet-en-35m.fp16.safetensors
 """
 
