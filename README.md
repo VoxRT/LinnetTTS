@@ -105,6 +105,13 @@ flow LM 31.5 M including the 3.1 M text table, decoder 9.9 M; 38.4 M outside the
    `tests/goldens/ref`; `python tools/make_goldens.py --weights local/linnet-en-35m.safetensors --tokenizer
    local/tokenizer.model --voice local/voices/linnet-en-f1.npy` regenerates `tests/goldens/{hello,meeting}`.
 
+## Examples
+
+`examples/audio/` holds four utterances made with the default parameters (two voices, a plain sentence and one with simple
+numbers), with the texts and the command that reproduces them. The model has no text normalisation: simple digit forms
+are usually read correctly, but dense raw text (currency amounts with decimals, percentages, slash or ISO dates, phone
+numbers, version strings) is sometimes misread or cut short, so convert such text to words before synthesis.
+
 ## Performance
 
 Rust runtime, fp16 weights, one step = 80 ms of audio (an LM step plus two decoder frames). Measured without real-time pacing.
