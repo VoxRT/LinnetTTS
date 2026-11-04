@@ -22,16 +22,19 @@ speed, latency and footprint.
 
 ## Results
 
-| model | params | weights on disk | voice cloning | streaming | RTF, 1 thread | RTF, 4 threads | first audio, 1 thread | peak RSS |
-|---|---|---|---|---|---|---|---|---|
-| Linnet `linnet-en-35m`, fp16, Rust runtime | 41 M | 83 MB | yes | every 80 ms | 10.6 % | 3.4 % | 87 / 133 ms | 187 MB |
-| pocket-tts 4.0.1 (Kyutai), PyTorch | 100 M | 236 MB | yes | every 80 ms | 23.8 % (2 cores) | 24.1 % | 71 / 82 ms | 968 MB |
-| Kokoro-82M v1.0, ONNX fp32 | 81 M | 326 MB + 28 MB voices | no | no | 51.7 % | 17.2 % | 1.5 / 9.6 s | 1246 MB |
-| Piper `en_US-ljspeech-medium`, ONNX | 16 M | 64 MB | no | per sentence | 5.8 % | 2.1 % | 180 / 283 ms | 503 MB |
-| Piper `en_US-ljspeech-high`, ONNX | 28 M | 114 MB | no | per sentence | 42.5 % | 12.4 % | 1.4 / 2.1 s | 639 MB |
+| model | languages | params | weights on disk | voice cloning | streaming | RTF, 1 thread | RTF, 4 threads | first audio, 1 thread | peak RSS |
+|---|---|---|---|---|---|---|---|---|---|
+| Linnet `linnet-en-35m`, fp16, Rust runtime | English | 41 M | 83 MB | yes | every 80 ms | 10.6 % | 3.4 % | 87 / 133 ms | 187 MB |
+| pocket-tts 4.0.1 (Kyutai), PyTorch | English (7 languages, one model each) | 100 M | 236 MB | yes | every 80 ms | 23.8 % (2 cores) | 24.1 % | 71 / 82 ms | 968 MB |
+| Kokoro-82M v1.0, ONNX fp32 | 8 languages in one model | 81 M | 326 MB + 28 MB voices | no | no | 51.7 % | 17.2 % | 1.5 / 9.6 s | 1246 MB |
+| Piper `en_US-ljspeech-medium`, ONNX | English (one model per voice, many languages) | 16 M | 64 MB | no | per sentence | 5.8 % | 2.1 % | 180 / 283 ms | 503 MB |
+| Piper `en_US-ljspeech-high`, ONNX | English (one model per voice, many languages) | 28 M | 114 MB | no | per sentence | 42.5 % | 12.4 % | 1.4 / 2.1 s | 639 MB |
 
 Notes:
 
+- Languages: Linnet is English only. Kokoro-82M serves eight languages from the one model measured here;
+  pocket-tts 4.0.1 ships separate models for seven languages (the English one is measured); Piper has one model
+  per voice in many languages. The table measures the cost of English synthesis only.
 - Kokoro returns the whole utterance from one call (`kokoro-onnx` `create_stream` also returned a single chunk here). A
   caller that splits the text into sentences gets the first audio after the first sentence, roughly the short-text figure.
   The int8 ONNX of Kokoro measured slower than fp32 on this CPU (74 % at 1 thread, 59 % at 4), so the fp32 row is shown.

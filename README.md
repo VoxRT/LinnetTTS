@@ -164,16 +164,16 @@ First audio arrives 50–130 ms after the text on the phones and about 250 ms in
 
 Same machine (i9-13900K, one performance core per thread), each model through its published Python package, three English
 texts, median of three runs. RTF = generation time / audio duration, including text processing and the prime pass. Method,
-versions and the reproduction script: `docs/benchmarks.md`, `tools/bench_cpu_tts.py`. Speed only; quality is not measured here.
+versions and the reproduction script: `docs/benchmarks.md`, `tools/bench_cpu_tts.py`. Speed only, on English text; quality is not measured here. Linnet is English only; Kokoro serves eight languages from the one model measured, pocket-tts and Piper ship one model per language (their English models are measured).
 File sizes are decimal megabytes (10^6 bytes), as in the weights table below.
 
-| model | params | weights | cloning | streaming | RTF, 1 thread | RTF, 4 threads | first audio (short / long text) | peak RSS |
-|---|---|---|---|---|---|---|---|---|
-| Linnet `linnet-en-35m` (fp16, Rust) | 41 M | 83 MB | yes | every 80 ms | 10.6 % | 3.4 % | 87 / 133 ms | 187 MB |
-| pocket-tts 4.0.1 (PyTorch) | 100 M | 236 MB | yes | every 80 ms | 23.8 % (2 cores) | 24.1 % | 71 / 82 ms | 968 MB |
-| Kokoro-82M (ONNX fp32) | 81 M | 354 MB | no | no | 51.7 % | 17.2 % | 1.5 / 9.6 s | 1246 MB |
-| Piper `en_US-ljspeech-medium` (ONNX) | 16 M | 64 MB | no | per sentence | 5.8 % | 2.1 % | 180 / 283 ms | 503 MB |
-| Piper `en_US-ljspeech-high` (ONNX) | 28 M | 114 MB | no | per sentence | 42.5 % | 12.4 % | 1.4 / 2.1 s | 639 MB |
+| model | languages | params | weights | cloning | streaming | RTF, 1 thread | RTF, 4 threads | first audio (short / long text) | peak RSS |
+|---|---|---|---|---|---|---|---|---|---|
+| Linnet `linnet-en-35m` (fp16, Rust) | English | 41 M | 83 MB | yes | every 80 ms | 10.6 % | 3.4 % | 87 / 133 ms | 187 MB |
+| pocket-tts 4.0.1 (PyTorch) | English (7 languages, one model each) | 100 M | 236 MB | yes | every 80 ms | 23.8 % (2 cores) | 24.1 % | 71 / 82 ms | 968 MB |
+| Kokoro-82M (ONNX fp32) | 8 languages in one model | 81 M | 354 MB | no | no | 51.7 % | 17.2 % | 1.5 / 9.6 s | 1246 MB |
+| Piper `en_US-ljspeech-medium` (ONNX) | English (one model per voice, many languages) | 16 M | 64 MB | no | per sentence | 5.8 % | 2.1 % | 180 / 283 ms | 503 MB |
+| Piper `en_US-ljspeech-high` (ONNX) | English (one model per voice, many languages) | 28 M | 114 MB | no | per sentence | 42.5 % | 12.4 % | 1.4 / 2.1 s | 639 MB |
 
 ## Weights
 
