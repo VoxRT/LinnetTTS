@@ -160,6 +160,20 @@ First audio arrives 50–130 ms after the text on the phones and about 250 ms in
 (the prime pass plus one step). Peak memory is about 160 MB on Linux. Details, the in-app numbers and the effect of playback pacing: `docs/model-card.md`
 ("Performance") and `bindings/README.md` ("Threads", "Playback and step time").
 
+### Compared with other CPU TTS models
+
+Same machine (i9-13900K, one performance core per thread), each model through its published Python package, three English
+texts, median of three runs. RTF = generation time / audio duration, including text processing and the prime pass. Method,
+versions and the reproduction script: `docs/benchmarks.md`, `tools/bench_cpu_tts.py`. Speed only; quality is not measured here.
+
+| model | params | weights | cloning | streaming | RTF, 1 thread | RTF, 4 threads | first audio (short / long text) | peak RSS |
+|---|---|---|---|---|---|---|---|---|
+| Linnet `linnet-en-35m` (fp16, Rust) | 41 M | 79 MB | yes | every 80 ms | 10.6 % | 3.4 % | 87 / 133 ms | 187 MB |
+| pocket-tts 4.0.1 (PyTorch) | 100 M | 224 MB | yes | every 80 ms | 23.8 % (2 cores) | 24.1 % | 71 / 82 ms | 968 MB |
+| Kokoro-82M (ONNX fp32) | 81 M | 338 MB | no | no | 51.7 % | 17.2 % | 1.5 / 9.6 s | 1246 MB |
+| Piper `en_US-lessac-medium` (ONNX) | 16 M | 60 MB | no | per sentence | 5.7 % | 2.1 % | 149 / 232 ms | 392 MB |
+| Piper `en_US-lessac-high` (ONNX) | 28 M | 108 MB | no | per sentence | 41.1 % | 11.9 % | 1.1 / 1.8 s | 502 MB |
+
 ## Weights
 
 Model weights are not in this repository and are not bundled in any package. Download them from the GitHub release

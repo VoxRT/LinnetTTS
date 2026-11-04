@@ -115,6 +115,10 @@ unless stated.
 Measured without real-time pacing; when synthesis is paced to playback, mobile power management raises the step time 3–4× (see
 `bindings/README.md`, "Playback and step time"). An integer (W8A8) variant for weaker devices and a browser build are planned for a later release.
 
+Against other small CPU models on the same desktop (one thread, Python packages, same texts): pocket-tts 100 M runs at
+24 % real time on two cores, Kokoro-82M at 52 %, Piper medium at 6 %, Linnet at 11 % (step time plus prime and the Python
+loop) with the smallest resident memory of the streaming models. Method and full table: `docs/benchmarks.md` in the repository.
+
 ## Built-in voices
 
 Both built-in voices are synthetic: they were designed from a text description with Qwen3-TTS-12Hz-1.7B-VoiceDesign (Apache-2.0,
