@@ -20,7 +20,7 @@
 //! ULP because the summation order changes; batched variants are
 //! bit-equal to their row-wise counterparts on the same dispatch path.
 //!
-//! Also provided: [`f16`] (binary16 → binary32), [`fft`] (radix-2 FFT,
+//! Also provided: [`mod@f16`] (binary16 → binary32), [`fft`] (radix-2 FFT,
 //! inverse real FFT, periodic Hann window) and [`rng`] (xoshiro256**
 //! with a Gaussian sampler) — the small infrastructure pieces the TTS
 //! runtime needs alongside the kernels.

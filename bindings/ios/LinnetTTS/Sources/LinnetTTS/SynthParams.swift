@@ -13,7 +13,7 @@ public struct SynthParams: Equatable, Sendable {
     /// Seed of the noise generator; the same seed gives the same audio.
     public var seed: UInt64
     /// Threads the model uses while this utterance runs: 1 = single-threaded, 0 = automatic
-    /// (the performance cores, at most 4). Applied to the model when the session is created
+    /// (one thread on iOS/macOS, where a second core does not pay off). Applied to the model when the session is created
     /// (`LinnetModel.threads`). The audio is identical for every value.
     public var threads: Int
 

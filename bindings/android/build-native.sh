@@ -41,6 +41,9 @@ for abi in "${abis[@]}"; do
   targets+=(-t "$abi")
 done
 
+# Keep build-host paths (home directory, cargo registry, checkout) out of the binaries' panic-location strings.
+export RUSTFLAGS="${RUSTFLAGS:-} --remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo --remap-path-prefix=$HOME=/home --remap-path-prefix=$(pwd)=/src"
+
 echo "NDK: ${ANDROID_NDK_HOME:-$ANDROID_NDK_ROOT}, platform $platform, ABIs: ${abis[*]}"
 (cd "$crate" && cargo ndk --platform "$platform" "${targets[@]}" -o "$out" build --release)
 

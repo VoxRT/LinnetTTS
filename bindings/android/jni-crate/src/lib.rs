@@ -217,7 +217,6 @@ fn vec_to_ints<'l>(env: &mut JNIEnv<'l>, v: &[u32]) -> JIntArray<'l> {
 
 #[no_mangle]
 pub extern "system" fn Java_com_voxrt_linnet_LinnetNative_version<'l>(env: JNIEnv<'l>, _this: JObject<'l>) -> JString<'l> {
-    let mut env = env;
     env.new_string(linnet_tts::VERSION).unwrap_or_default()
 }
 

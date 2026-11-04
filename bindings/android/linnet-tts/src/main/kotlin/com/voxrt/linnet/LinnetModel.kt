@@ -98,7 +98,7 @@ class LinnetModel private constructor(handle: Long) : AutoCloseable {
 
         /**
          * Build a model from in-memory images, e.g. `assets.open("linnet-en-35m.fp16.safetensors").readBytes()`.
-         * The weights are copied once more on the native side; for a 70 MB fp16 file prefer copying the
+         * The weights are copied once more on the native side; for the 83 MB fp16 file prefer copying the
          * assets to `filesDir` on first run and using the path constructor.
          */
         @JvmStatic

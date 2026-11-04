@@ -9,8 +9,8 @@
 //! individually; distinct handles may be used from different threads, and
 //! one model may serve any number of sessions concurrently.
 //!
-//! Panics never cross the boundary: each entry point catches them and
-//! returns `LINNET_ERR_INTERNAL`. The message of the most recent error on
+//! Panics never cross the boundary: each fallible entry point catches
+//! them and returns `LINNET_ERR_INTERNAL`. The message of the most recent error on
 //! the calling thread is available through `linnet_last_error`.
 
 #![allow(clippy::missing_safety_doc)]
@@ -241,7 +241,11 @@ pub unsafe extern "C" fn linnet_voice_from_latents(
         if latents.is_null() || out_voice.is_null() || frames == 0 || dim == 0 {
             return LINNET_ERR_INVALID_ARG;
         }
-        let data = core::slice::from_raw_parts(latents, frames * dim).to_vec();
+        let Some(n) = frames.checked_mul(dim) else {
+            set_error("frames * dim overflows");
+            return LINNET_ERR_INVALID_ARG;
+        };
+        let data = core::slice::from_raw_parts(latents, n).to_vec();
         match VoiceLatents::from_vec(data, dim) {
             Ok(v) => {
                 *out_voice = Box::into_raw(Box::new(linnet_voice { inner: v }));
@@ -313,8 +317,10 @@ pub unsafe extern "C" fn linnet_session_prime(session: *mut linnet_session, text
 }
 
 /// Next chunk of audio into `out_pcm` (capacity `cap` samples, at least
-/// `linnet_samples_per_step`). `*out_written` receives the number of
-/// samples written; 0 means the utterance is finished.
+/// `linnet_samples_per_step`, checked before the step runs so that no
+/// chunk is lost). `*out_written` receives the number of samples
+/// written; 0 means the utterance is finished (or the session was never
+/// primed).
 #[no_mangle]
 pub unsafe extern "C" fn linnet_session_step(
     session: *mut linnet_session,
@@ -328,14 +334,14 @@ pub unsafe extern "C" fn linnet_session_step(
         }
         *out_written = 0;
         let s = &mut (*session).inner;
+        if cap < s.samples_per_step() {
+            set_error("output buffer must hold at least linnet_samples_per_step samples");
+            return LINNET_ERR_INVALID_ARG;
+        }
         let Some(chunk) = s.step() else {
             return LINNET_OK;
         };
-        if chunk.len() > cap {
-            *out_written = chunk.len();
-            set_error("output buffer too small");
-            return LINNET_ERR_BUFFER_TOO_SMALL;
-        }
+        debug_assert!(chunk.len() <= cap);
         core::slice::from_raw_parts_mut(out_pcm, chunk.len()).copy_from_slice(chunk);
         *out_written = chunk.len();
         LINNET_OK
@@ -343,8 +349,10 @@ pub unsafe extern "C" fn linnet_session_step(
 }
 
 /// Whole utterance into `out_pcm` (capacity `cap`). `*out_written` always
-/// receives the full length; with `out_pcm = NULL, cap = 0` the call only
-/// reports the size (the audio is still synthesized).
+/// receives the full length; when it exceeds `cap` the status is
+/// `LINNET_ERR_BUFFER_TOO_SMALL` and nothing is written, so
+/// `out_pcm = NULL, cap = 0` only reports the size (the audio is still
+/// synthesized).
 #[no_mangle]
 pub unsafe extern "C" fn linnet_synthesize(
     model: *const linnet_model,
@@ -373,7 +381,9 @@ pub unsafe extern "C" fn linnet_synthesize(
             set_error("output buffer too small");
             return LINNET_ERR_BUFFER_TOO_SMALL;
         }
-        core::slice::from_raw_parts_mut(out_pcm, wav.len()).copy_from_slice(&wav);
+        if !wav.is_empty() {
+            core::slice::from_raw_parts_mut(out_pcm, wav.len()).copy_from_slice(&wav);
+        }
         LINNET_OK
     })
 }

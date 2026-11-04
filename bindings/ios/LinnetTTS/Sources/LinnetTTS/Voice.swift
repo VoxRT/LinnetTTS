@@ -28,10 +28,10 @@ public final class Voice: @unchecked Sendable {
 
     /// Load a NumPy `.npy` file (float32, C order).
     public static func load(path: String) throws -> Voice {
+        let shape = try npyShape(path: path)
         var h: OpaquePointer?
         try check(linnet_voice_load(path, &h))
         guard let h else { throw LinnetError.internalError("voice handle is null") }
-        let shape = try npyShape(path: path)
         return Voice(handle: h, frames: shape.0, dim: shape.1)
     }
 

@@ -6,7 +6,7 @@ import Foundation
 /// Not thread-safe: drive a session from one thread at a time (typically a dedicated synthesis
 /// queue that feeds a ``LinnetPlayer``). Different sessions of the same model may run on
 /// different threads concurrently. The session keeps the model alive until it is released, and
-/// holds KV caches sized by `maxFrames` (a few MB).
+/// holds KV caches sized by `maxFrames` (about 20 MB with the defaults, half without guidance).
 ///
 /// Chunk layout (see `docs/streaming-contract.md`): the first chunk is
 /// `samplesPerStep - outputDelay` samples (1200), later ones `samplesPerStep` (1920), the last
@@ -19,7 +19,8 @@ public final class LinnetSession {
     let voice: Voice
     /// Largest chunk ``step()`` returns.
     public let samplesPerStep: Int
-    /// True once ``step()`` has returned `nil`. Reset by ``prime(text:)``.
+    /// True once ``step()`` has returned `nil` (the Rust, Python and Kotlin APIs set their flag one call
+    /// earlier, when the final zero chunk is returned). Reset by ``prime(text:)``.
     public private(set) var finished = false
     /// Chunks returned so far for the current text (including the final zero chunk).
     public private(set) var chunksEmitted = 0

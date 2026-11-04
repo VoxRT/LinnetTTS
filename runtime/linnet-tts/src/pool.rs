@@ -237,12 +237,11 @@ impl<T> SendPtr<T> {
     }
 }
 
-/// Thread count for `threads = 0`: the number of fast cores, at most 4.
+/// Thread count for `threads = 0`.
 ///
 /// Android / Linux: cores whose `cpufreq/cpuinfo_max_freq` equals the
-/// highest one (the big cluster). iOS / macOS: `hw.perflevel0.physicalcpu`
-/// (performance cores), else `hw.physicalcpu`. Elsewhere the available
-/// parallelism. wasm32: 1.
+/// highest one (the big cluster), at most 4. iOS / macOS: 1 (see below).
+/// Elsewhere the available parallelism, at most 4. wasm32: 1.
 pub fn auto_threads() -> usize {
     #[cfg(target_arch = "wasm32")]
     {
@@ -257,7 +256,7 @@ pub fn auto_threads() -> usize {
         // Apple silicon: a step is already 5-7 ms and splits into ~80 tiny regions; waking a parked worker
         // on a second performance core costs more than the work it takes (A13: 2 threads 11.4 ms vs 6.7 ms
         // per step, 4 threads 47 ms). The pool only shortens the prime pass there, so `auto` means one
-        // thread; callers that prefer a faster first chunk can still ask for `perf_cores()` explicitly.
+        // thread; callers that prefer a faster first chunk can set an explicit count.
         #[cfg(any(target_os = "ios", target_os = "macos"))]
         {
             return 1;

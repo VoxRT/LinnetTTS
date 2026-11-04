@@ -3,6 +3,7 @@
  *
  *   ./stream <weights.safetensors> <tokenizer.model> <voice.npy> "text" out.wav [seed]
  */
+#define _POSIX_C_SOURCE 199309L /* clock_gettime */
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>

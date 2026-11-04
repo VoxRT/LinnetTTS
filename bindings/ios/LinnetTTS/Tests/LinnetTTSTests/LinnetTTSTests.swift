@@ -139,7 +139,7 @@ final class LinnetTTSTests: XCTestCase {
         let t4 = try model.synthesize(text: text, voice: voice, params: SynthParams(seed: 7, threads: 4))
         XCTAssertEqual(model.threads, 4)
         let tAuto = try model.synthesize(text: text, voice: voice, params: SynthParams(seed: 7, threads: 0))
-        XCTAssertGreaterThan(model.threads, 0, "automatic resolves to the number of performance cores")
+        XCTAssertGreaterThan(model.threads, 0, "automatic resolves to a positive thread count")
         XCTAssertEqual(t1, t4, "threads 1 vs 4 must be bit-exact")
         XCTAssertEqual(t1, tAuto, "threads 1 vs auto must be bit-exact")
         let again = try model.synthesize(text: text, voice: voice, params: SynthParams(seed: 7))

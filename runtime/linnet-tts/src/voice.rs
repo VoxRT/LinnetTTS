@@ -1,5 +1,6 @@
 //! Voice prompt latents: a `[T × latent_dim]` f32 matrix stored as a
-//! NumPy `.npy` file (format version 1 or 2, C order, little-endian).
+//! NumPy `.npy` file (format version 1, 2 or 3, C order, little-endian;
+//! `<f4`, or `<f8` widened to f32).
 
 use crate::error::{Error, Result};
 
@@ -65,7 +66,9 @@ impl VoiceLatents {
         if shape.len() != 2 {
             return Err(bad(&format!("expected a 2-D array, got shape {shape:?}")));
         }
-        let numel = shape[0] * shape[1];
+        let Some(numel) = shape[0].checked_mul(shape[1]) else {
+            return Err(Error::Format("npy: shape overflows".into()));
+        };
         let payload = &bytes[data_start..];
         if payload.len() != numel * width {
             return Err(bad(&format!(

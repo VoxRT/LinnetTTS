@@ -59,6 +59,9 @@ if ! rustup target list --installed 2>/dev/null | grep -qx "$TARGET"; then
   exit 1
 fi
 
+# Keep build-host paths (home directory, cargo registry, checkout) out of the binaries' panic-location strings.
+export RUSTFLAGS="${RUSTFLAGS:-} --remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo --remap-path-prefix=$HOME=/home --remap-path-prefix=$(pwd)=/src"
+
 echo "== linnet-tts $VERSION -> $TARGET"
 cd "$RUNTIME"
 # Release profile for distribution: fat LTO, one codegen unit. Panics stay

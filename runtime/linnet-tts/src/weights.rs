@@ -127,13 +127,13 @@ impl Mat {
     /// spread over the pool. Bit-equal to the single-threaded sequence
     /// (`gemm`, then `add_inplace(row, bias)` and the activation per row)
     /// for any thread count: each output value is one dot product done by
-    /// one thread, and the epilogue is per row (see [`epilogue`]).
+    /// one thread, and the epilogue is per row (see `epilogue`).
     ///
-    /// Split: up to [`SMALL_M`] activation rows (the per-step shapes) over
-    /// the weight rows in chunks of [`OUT_CHUNK`], so the weights are
+    /// Split: up to `SMALL_M` activation rows (the per-step shapes) over
+    /// the weight rows in chunks of `OUT_CHUNK`, so the weights are
     /// streamed once in total and each chunk writes its own columns of
     /// every output row; more rows (prefill) over the activation rows in
-    /// blocks of [`ROW_BLOCK`], which keeps the kernels' four-row blocking.
+    /// blocks of `ROW_BLOCK`, which keeps the kernels' four-row blocking.
     pub fn gemm_par(&self, pool: &ThreadPool, a: &[f32], m: usize, out: &mut [f32], bias: Option<&[f32]>, act: Act) {
         let (k, n) = (self.cols(), self.rows());
         debug_assert_eq!(a.len(), m * k);

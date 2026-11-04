@@ -30,6 +30,9 @@ export PATH="$HOME/.cargo/bin:$PATH"
 export IPHONEOS_DEPLOYMENT_TARGET="${IPHONEOS_DEPLOYMENT_TARGET:-15.0}"
 export MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-12.0}"
 
+# Keep build-host paths (home directory, cargo registry, checkout) out of the binaries' panic-location strings.
+export RUSTFLAGS="${RUSTFLAGS:-} --remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo --remap-path-prefix=$HOME=/home --remap-path-prefix=$(pwd)=/src"
+
 targets=(aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios)
 if [ "$with_macos" = 1 ]; then targets+=(aarch64-apple-darwin); fi
 

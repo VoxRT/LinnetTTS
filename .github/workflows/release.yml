@@ -156,7 +156,9 @@ jobs:
   pypi:
     name: Publish wheels to PyPI
     if: github.event_name == 'push'
-    needs: [check-version, wheels]
+    # Every build and check must have passed first: a wheel on PyPI cannot be withdrawn and re-uploaded under the
+    # same version, so nothing is published while another part of the release can still fail.
+    needs: [check-version, wheels, linux-c, android, ios]
     runs-on: ubuntu-latest
     # Trusted publishing (OIDC): the PyPI project "linnet-tts" lists this repository, this workflow file and the
     # environment "pypi" as its publisher; no API token is stored in the repository.
@@ -192,7 +194,7 @@ jobs:
           V=${{ needs.check-version.outputs.version }}
           awk -v v="$V" '/^## \[/{p = ($0 ~ "^## \\[" v "\\]")} p' CHANGELOG.md > notes.md
           echo "Model weights are published separately (release weights-vN, see README.md)." >> notes.md
-          (cd assets && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt)
+          (cd assets && sha256sum *.whl *.tar.gz *.aar > SHA256SUMS.txt && cat SHA256SUMS.txt)
       - uses: softprops/action-gh-release@v2
         with:
           name: LinnetTTS ${{ needs.check-version.outputs.version }}
@@ -200,3 +202,11 @@ jobs:
           files: assets/*
           fail_on_unmatched_files: true
           draft: false
+      # The action attaches the assets to the draft release that the xcframework workflow created for this tag and
+      # publishes it, but leaves that draft's name and body untouched; set them explicitly.
+      - name: Release title and notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V=${{ needs.check-version.outputs.version }}
+          gh release edit "v$V" --title "LinnetTTS $V" --notes-file notes.md --draft=false --latest

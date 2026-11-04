@@ -56,8 +56,9 @@ impl Default for SynthParams {
     }
 }
 
-/// Weights, tokenizer and derived constants. Immutable and shareable
-/// between threads; every mutable piece lives in a [`Session`].
+/// Weights, tokenizer and derived constants. Immutable apart from the
+/// thread setting, shareable between threads; every other mutable piece
+/// lives in a [`Session`].
 pub struct Linnet {
     cfg: ModelConfig,
     lm: FlowLm,
@@ -239,6 +240,9 @@ impl<'m> Session<'m> {
         if !params.cfg.is_finite() {
             return Err(Error::Invalid("cfg must be finite".into()));
         }
+        if params.max_frames == 0 {
+            return Err(Error::Invalid("max_frames must be at least 1".into()));
+        }
         model.set_threads(params.threads);
         let n_streams = if params.cfg == 1.0 { 1 } else { 2 };
         let cap = 2 + voice.frames() + params.max_frames + 2;
@@ -275,12 +279,18 @@ impl<'m> Session<'m> {
     /// Tokenize `text` and run the prefix through the trunk. Resets any
     /// previous utterance (the KV caches must fit the new prefix).
     pub fn prime(&mut self, text: &str) -> Result<()> {
+        if text.trim().is_empty() {
+            return Err(Error::Invalid("empty input: the text is blank".into()));
+        }
         let tokens = self.model.tokenize(text);
         self.prime_tokens(&tokens)
     }
 
     /// Like [`Session::prime`] with ready-made token ids.
     pub fn prime_tokens(&mut self, tokens: &[u32]) -> Result<()> {
+        if tokens.is_empty() {
+            return Err(Error::Invalid("empty input: the text produced no tokens".into()));
+        }
         let _big = crate::pool::affinity::BigCoreGuard::enter();
         let lm = &self.model.lm;
         let d = self.model.cfg.lm.d_model;
@@ -445,9 +455,16 @@ impl<'m> Session<'m> {
         self.frames
     }
 
-    /// True once [`Session::step`] has returned `None`.
+    /// True once the last chunk (the `output_delay` zeros) has been
+    /// returned; the next [`Session::step`] returns `None`. Also true when
+    /// the utterance ended without any chunk (EOS on the first step).
     pub fn is_finished(&self) -> bool {
         self.finished
+    }
+
+    /// Samples of one full chunk (`samples_per_step` of the model).
+    pub fn samples_per_step(&self) -> usize {
+        self.model.samples_per_step()
     }
 
     pub fn params(&self) -> &SynthParams {

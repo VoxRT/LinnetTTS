@@ -6,7 +6,7 @@ package com.voxrt.linnet
  * Not thread-safe: drive a session from one thread at a time (typically a dedicated
  * synthesis thread that writes to an [AudioTrackPlayer]). Different sessions of the same model
  * may run on different threads concurrently. The session keeps the model weights alive until
- * it is closed, so close sessions when done to free the KV caches (a few MB each).
+ * it is closed, so close sessions when done to free the KV caches (about 20 MB each with the defaults).
  *
  * Chunk layout (see docs/streaming-contract.md): the first chunk is
  * `samplesPerStep - outputDelay` samples (1200), later ones `samplesPerStep` (1920), the last one
@@ -46,7 +46,7 @@ class LinnetSession internal constructor(handle: Long, val samplesPerStep: Int) 
     /** LM steps emitted so far. */
     val frames: Int get() = LinnetNative.sessionFrames(nativeHandle)
 
-    /** True once [step] has returned `null`. */
+    /** True once the last chunk (the output-delay zeros) has been returned; the next [step] returns `null`. */
     val finished: Boolean get() = LinnetNative.sessionFinished(nativeHandle)
 
     /** Codec-space latent of the most recent step (`latentDim` values). */

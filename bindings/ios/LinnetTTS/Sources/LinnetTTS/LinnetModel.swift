@@ -43,8 +43,8 @@ public final class LinnetModel: @unchecked Sendable {
     /// Version of the native runtime.
     public static var version: String { String(cString: linnet_version()) }
 
-    /// Threads the model uses: set 1 for single-threaded, 0 for automatic (the performance
-    /// cores, at most 4); the getter returns the resolved count. The audio is identical for
+    /// Threads the model uses: set 1 for single-threaded, 0 for automatic (one thread on
+    /// iOS/macOS, where a second core does not pay off); the getter returns the resolved count. The audio is identical for
     /// every value; only the speed changes. Applies to existing and future sessions; change it
     /// between utterances, not while a session steps.
     public var threads: Int {

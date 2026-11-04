@@ -9,6 +9,10 @@
 //! Long-running calls (`load`, `prime`, `step`, `synthesize`) release the
 //! GIL, so one model may serve several sessions from several threads.
 
+// pyo3 0.22's #[pymethods] expansion trips `useless_conversion` on recent clippy; `is_multiple_of` needs Rust 1.87
+// and the crate's MSRV is 1.85.
+#![allow(clippy::useless_conversion, clippy::manual_is_multiple_of)]
+
 use std::sync::Arc;
 
 use pyo3::exceptions::{PyIOError, PyValueError};
@@ -302,7 +306,7 @@ impl PySession {
         self.session.frames()
     }
 
-    /// True once `step` has returned `None`.
+    /// True once the last chunk (the `output_delay` zeros) has been returned; the next `step` returns `None`.
     #[getter]
     fn finished(&self) -> bool {
         self.session.is_finished()

@@ -1,7 +1,8 @@
 //! Parity against the Python package: the goldens in `tests/goldens/`
 //! store the token ids, the Gaussian draws, the latents and the audio of
-//! two short utterances. The fp32 weights must reproduce them to 1e-4;
-//! the fp16 export is allowed to drift (reported, bounded loosely).
+//! two short utterances. The fp32 weights must reproduce the latents to
+//! 1e-4, the decoder alone to 1e-4 and the end-to-end audio to 1e-2 (SNR
+//! >= 40 dB); the fp16 export is allowed to drift (reported, bounded loosely).
 //!
 //! Inputs are looked up under `local/` of the repository (the unpacked
 //! weights release: `linnet-en-35m.safetensors`, `linnet-en-35m.fp16.safetensors`,
