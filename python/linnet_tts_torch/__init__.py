@@ -5,7 +5,7 @@ from .lm import FlowLM, LMConfig
 from .synth import OUTPUT_DELAY, Linnet
 from .tokenizer import Tokenizer
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 __all__ = [
     "SAMPLE_RATE", "OUTPUT_DELAY", "DecoderConfig", "VocosDecoder", "FlowLM", "LMConfig",
     "Linnet", "Tokenizer",

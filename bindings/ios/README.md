@@ -195,8 +195,9 @@ real-time margin on slow phones, synthesize in bursts with a large queue (`Linne
 of 8 s, also the sample's default, does this) so the core runs at full clock and then sleeps. `device-pace-experiment.sh` runs these modes on a device.
 
 Baseline device (iPhone 11, A13, iOS 26, sample app, 80-step sentence): threads 1 — prime 97–106 ms, first chunk
-107–116 ms, mean step 7.1 ms (worst 9.6) without pacing; threads 2 (auto) — prime 61–74 ms, first chunk 72–86 ms,
-mean step 6.9–8.1 ms (the second thread helps the prime, not the step); under real-time pacing both show ≈ 22 ms
+107–116 ms, mean step 7.1 ms (worst 9.6) without pacing (re-measured on 0.1.0: prime 99–113 ms, first chunk 109–122 ms, mean
+step 6.4–7.1 ms, worst up to 11.9 ms); threads 2 — prime 78 ms, first chunk 88 ms, but mean step 14 ms (worst 30 ms): the second
+thread helps the prime and hurts the step, which is why `auto` is one thread; under real-time pacing both show ≈ 22 ms
 per step for the power-management reason described above. The A13 is the oldest device measured (the package
 targets iOS 15, which runs on older chips) and leaves a ten-fold margin against the 80 ms step budget. Hosted XCTests on the A13: 6/6, audio MD5s identical to the A15 and
 the Mac; threads 1 — 6.7 ms per step, threads 2 — 11.4 ms (worst 31), threads 4 — 47 ms: the pool hurts the step on

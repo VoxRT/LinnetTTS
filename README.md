@@ -156,7 +156,7 @@ only by x86-64 builds; use it as a check there.
 | Raspberry Pi Zero 2 W, Cortex-A53 1 GHz | 1 / 4 (auto) | 158 / 59–60 ms | 198 / 75 % |
 
 Real-time factor = mean step time / 80 ms (the sentence-level figures in the binding READMEs also include the prime pass).
-First audio arrives 50–120 ms after the text on the phones and about 250 ms in the Android sample app on the Snapdragon 662
+First audio arrives 50–130 ms after the text on the phones and about 250 ms in the Android sample app on the Snapdragon 662
 (the prime pass plus one step). Peak memory is about 160 MB on Linux. Details, the in-app numbers and the effect of playback pacing: `docs/model-card.md`
 ("Performance") and `bindings/README.md` ("Threads", "Playback and step time").
 

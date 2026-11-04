@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "linnet-tts"
-version = "0.1.0"
+version = "0.1.1"
 description = "LinnetTTS: lightweight on-device text-to-speech (native runtime)"
 readme = "README.md"
 license = { text = "Apache-2.0" }

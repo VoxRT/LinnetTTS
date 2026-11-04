@@ -11,7 +11,7 @@
 import Foundation
 import PackageDescription
 
-let version = "0.1.0"
+let version = "0.1.1"
 let checksum = "a7500ed1acab2582325b88398c01e6332dd1b81fab0755594a9d300569aba93b"
 
 let binary: Target = ProcessInfo.processInfo.environment["LINNET_LOCAL_XCFRAMEWORK"] != nil
