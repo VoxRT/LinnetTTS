@@ -209,4 +209,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           V=${{ needs.check-version.outputs.version }}
-          gh release edit "v$V" --title "LinnetTTS $V" --notes-file notes.md --draft=false --latest
+          # GitHub's API occasionally answers 5xx; retry a few times before failing the job.
+          for i in 1 2 3 4 5; do
+            gh release edit "v$V" --title "LinnetTTS $V" --notes-file notes.md --draft=false --latest && exit 0
+            echo "gh release edit failed (attempt $i), retrying in 30 s"; sleep 30
+          done
+          exit 1
