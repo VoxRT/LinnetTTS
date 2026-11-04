@@ -9,8 +9,8 @@ concatenate bit-for-bit to the offline result.
 |---|---|---|---|
 | Linux C / C++ | `linux/` | `linnet-tts-<ver>-linux-{x86_64,aarch64}.tar.gz` (`.so`, `.a`, header) | ready |
 | Python | `python/` | wheel `linnet-tts` (import `linnet_tts`), abi3 cp39+ | ready |
-| Android | `android/` | AAR `com.voxrt.linnet:linnet-tts` (Kotlin API, JNI in Rust), arm64-v8a + x86_64 | ready (publishing TODO) |
-| iOS | `ios/` | `LinnetTTS.xcframework` (static, ios-arm64 + simulator + macos-arm64) + Swift package `LinnetTTS` | ready (publishing TODO) |
+| Android | `android/` | AAR `com.voxrt.linnet:linnet-tts` (Kotlin API, JNI in Rust), arm64-v8a + x86_64 | ready; `linnet-tts-<ver>.aar` attached to the GitHub release (no Maven repository yet) |
+| iOS | `ios/` | `LinnetTTS.xcframework` (static, ios-arm64 + simulator + macos-arm64) + Swift package `LinnetTTS` | ready; `.package(url: "https://github.com/VoxRT/LinnetTTS.git", from: "<ver>")` |
 | Browser | — | WASM (SIMD128) + npm package | not planned for this release |
 
 Model weights (`linnet-en-35m.fp16.safetensors`, `tokenizer.model`) and voice files are not part of any
@@ -32,7 +32,7 @@ speed changes (see `docs/streaming-contract.md`).
 On Android the runtime also pins its threads to the big cluster: the pool workers for good, and the thread that calls
 `prime`, `step` or `decode` only for the duration of that call (its previous affinity mask is restored afterwards).
 Without this the scheduler keeps the short bursts of a synthesis on the little cores and migrates them up slowly; the
-same sample app on a Snapdragon 662 measured 22-33 ms per step before and 16-18 ms after (14.5 ms for the pinned
+same sample app on a Snapdragon 662 measured 22-33 ms per step before and 16-18 ms after (14.3 ms for the pinned
 command-line build). Nothing is pinned on a device whose cores are all alike, and nothing is pinned on iOS or Linux.
 
 ## Playback and step time
@@ -77,10 +77,12 @@ Linking by hand: `-Iinclude -Llib -llinnet_tts -lm` (shared) or `lib/liblinnet_t
 
 The aarch64 tarball runs unchanged on a Raspberry Pi (64-bit OS; the gcc build needs glibc 2.34 or newer, the `--zig`
 build glibc 2.17). Measured on a Pi Zero 2 W (4 × Cortex-A53 at 1 GHz, 512 MB, Debian 13, no heatsink) with the fp16
-weights and a 7.0 s sentence: 1 thread 158 ms per step (RTF 242 %); `threads` auto picks all four cores and gives
+weights and a 7.0 s sentence (RTF here = prime pass plus all steps over the audio duration, as the `synth` example prints it; the
+tables in the root README use step / 80 ms): 1 thread 158 ms per step (RTF 242 %); `threads` auto picks all four cores and gives
 59–60 ms per step (RTF 88 %, worst step 63–76 ms), i.e. real time with a small margin; six utterances back to back
 stayed at 59–60 ms while the SoC warmed from 57 to 67 °C. Peak resident memory 160 MB; loading the model from the SD
-card takes about 2.5 s. The output is bit-identical to the x86-64 and Android builds. A Pi Zero 2 W is the floor for
+card takes about 2.5 s. The reference synthesis of the weights release gave the same MD5 as on x86-64 and Android (same
+FMA kernels; cross-platform equality is observed, not asserted by a test). A Pi Zero 2 W is the floor for
 real time; a Pi 4 or Pi 5 has several times the margin.
 
 ## Python
@@ -102,7 +104,7 @@ audio = model.synthesize("Hello there.", voice, temp=0.3, cfg=2.0, seed=0)   # n
 
 session = model.session(voice, seed=0)
 session.prime("Hello there.")
-for chunk in session:                                 # np.float32 chunks, 80 ms each
+for chunk in session:                                 # np.float32 chunks: 1200, then 1920 (80 ms) each, 720 zeros last
     ...
 ```
 
@@ -112,7 +114,7 @@ Long calls release the GIL. Tests: `pytest bindings/python/tests` (needs the mod
 or `LINNET_ASSETS`; `local/` = the unpacked weights release, see the root README and `bindings/python/README.md`). For a manylinux wheel build on a modern host use
 `maturin build --release --manylinux 2_17 --zig` (needs zig) or build inside a manylinux container.
 
-The PyTorch reference package lives in `python/` as `linnet_tts_torch` (pip `linnet-tts-torch`); the two do
+The PyTorch reference package lives in `python/` as `linnet_tts_torch` (`pip install ./python`; not on PyPI); the two do
 not collide.
 
 ## Android

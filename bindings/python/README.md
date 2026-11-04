@@ -4,6 +4,19 @@ Python package for the LinnetTTS native runtime: lightweight on-device text-to-s
 fp16 weights, no PyTorch. The extension module is built from the Rust crate `runtime/linnet-tts` with
 [maturin](https://www.maturin.rs) (abi3, one wheel per platform for every CPython >= 3.9).
 
+## Install
+
+```sh
+pip install linnet-tts
+```
+
+Wheels on PyPI: manylinux 2.17 x86_64 and aarch64, macOS 11+ on Apple silicon; no Windows, Intel-macOS or source
+distribution in 0.1.0 (build from the repository on other platforms, see "Build"). The model files are not in the
+wheel: download the weights release https://github.com/VoxRT/LinnetTTS/releases/tag/weights-v1 (the fp16 weights,
+`tokenizer.model` and a voice `.npy`). They are licensed under the Linnet Weights License
+(https://github.com/VoxRT/LinnetTTS/blob/main/WEIGHTS_LICENSE.md), not Apache-2.0. Source, docs and the streaming
+contract: https://github.com/VoxRT/LinnetTTS.
+
 ```python
 import linnet_tts, soundfile as sf
 
@@ -19,8 +32,8 @@ for chunk in session:                                     # 80 ms per LM step
     play(chunk)
 ```
 
-`Voice.from_array(np.ndarray)` wraps in-memory `[T, 48]` latents. The chunk sizes follow
-`docs/streaming-contract.md`: the first chunk is `samples_per_step - output_delay` samples, later ones
+`Voice.from_array(np.ndarray)` wraps in-memory `[T, 48]` latents. The chunk sizes follow the streaming contract
+(`docs/streaming-contract.md` in the repository): the first chunk is `samples_per_step - output_delay` samples, later ones
 `samples_per_step` (1920), the last one `output_delay` (720) zeros, and the concatenation of all chunks is
 sample-for-sample identical to `synthesize` with the same parameters and seed.
 
@@ -38,7 +51,7 @@ The release profile uses fat LTO and strips symbols; the wheel is ~0.4 MB. Runti
 
 The tests need the model assets (gitignored). Point `LINNET_ASSETS` at a directory holding
 `linnet-en-35m.fp16.safetensors`, `tokenizer.model` and `voices/linnet-en-f1.npy` (default: `../../local`;
-`local/` = the unpacked weights release, see the root README):
+`local/` = the unpacked weights release, see the root README at https://github.com/VoxRT/LinnetTTS):
 
 ```sh
 uv venv /tmp/linnet-venv && . /tmp/linnet-venv/bin/activate

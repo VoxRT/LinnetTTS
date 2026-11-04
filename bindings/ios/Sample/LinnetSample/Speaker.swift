@@ -6,11 +6,12 @@ import LinnetTTS
 ///
 /// Launch arguments (for driving the app without touching the screen, e.g. from
 /// `xcrun simctl launch` / `xcrun devicectl device process launch`):
-///   `-autospeak "<text>"`   speak the text as soon as the model is loaded, print the timings
-///   `-nopace` / `-bufferms N` do not block on playback (pure compute timing) / queue N ms ahead (default 8000)
-///                           to the log and exit;
+///   `-autospeak "<text>"`   speak the text as soon as the model is loaded, print the timings to the log and exit;
 ///   `-threads N`            thread count for the auto run (default 0 = automatic);
-///   `-repeat N`             repeat the utterance N times (default 1) and report the sum.
+///   `-repeat N`             repeat the utterance N times (default 1) and report the sum;
+///   `-nopace`               do not block on playback (pure compute timing);
+///   `-bufferms N`           queue N ms of audio ahead of playback (default 8000);
+///   `-noaudio`, `-quiet`, `-qos`: see the fields below.
 final class Speaker: ObservableObject {
     @Published var status = "loading..."
     @Published var ready = false

@@ -46,12 +46,13 @@ is enforced by ARC; drop references in any order.
 **Threads.** `LinnetModel` and `Voice` are immutable (apart from `threads`) and may be shared across threads and
 sessions. A `LinnetSession` is single-threaded: drive it from one queue at a time; different sessions of the
 same model may run concurrently. `threads` selects the worker count of the model's persistent pool (1 =
-single-threaded, 0 = automatic: the performance cores, at most 4); `SynthParams.threads` applies it when a
+single-threaded, 0 = automatic, which is one thread on iOS and macOS, where a second core does not pay off); `SynthParams.threads` applies it when a
 session is created. The audio is bit-identical for every thread count. Change it between utterances, not while
 a session steps. `LinnetPlayer.write` blocks while more than `bufferMillis` (default 8000 ms) of audio is queued,
 which paces synthesis to real time when the queue is small; `stop()` may be called from any thread.
 
-**Memory.** The fp16 model is about 70 MB in RAM; a session adds a few MB (KV caches sized by `maxFrames`).
+**Memory.** The fp16 weights file is 83 MB and stays resident (about 85 MB; roughly twice that transiently while loading);
+a session adds about 20 MB of KV caches with the default `maxFrames` and guidance (half without guidance).
 The static library adds about 2 MB to an arm64 app binary.
 
 ## Layout
@@ -95,10 +96,10 @@ Local: add `bindings/ios/LinnetTTS` as a package dependency (File > Add Package 
 `Package.swift`: `.package(path: "../LinnetTTS")` and `.product(name: "LinnetTTS", package: "LinnetTTS")`. The
 sample does exactly this through `XCLocalSwiftPackageReference`.
 
-Release: the root `Package.swift` carries the URL form; publish `dist/LinnetTTS.xcframework.zip` as a GitHub
-release asset, put its `dist/LinnetTTS.xcframework.checksum` into
-`.binaryTarget(name: "CLinnetTTS", url: ..., checksum: ...)`, and tag the repository so that
-`https://github.com/VoxRT/LinnetTTS` can be added by URL. TODO: not published yet.
+Release: the root `Package.swift` points at `LinnetTTS-<version>.xcframework.zip` on the GitHub release `v<version>` with
+its SwiftPM checksum; the archive is built by the `xcframework` Actions workflow (see `build/README.md`, "Release
+checklist"). Consumers add `.package(url: "https://github.com/VoxRT/LinnetTTS.git", from: "0.1.0")` and the product
+`LinnetTTS`.
 
 Code signing: the xcframework holds static libraries, nothing to sign separately; the app's own signature covers
 the linked code. Bitcode: not produced (Xcode 14+ does not use it). No equivalent of ProGuard exists on iOS; the
@@ -159,17 +160,19 @@ and the run; the files are ignored by git).
 
 Results (measured on 0.0.1; unchanged in 0.1.0): all tests pass on the macOS host (Apple M5) and on the iPhone 17 Pro simulator, both as the
 package tests and as `LinnetSampleTests`; the audio MD5 is identical everywhere, for every thread count. Host
-timings (release, 67-step sentence): threads 1 mean 3.3 ms per step (RTF 5 %), threads 4 mean 3.7-4.7 ms (the
+timings (release, 68-step sentence; RTF in this section = prime pass plus all steps over the audio duration, as the test
+prints it, while the root README tables use step / 80 ms): threads 1 mean 3.3 ms per step (RTF 5 %), threads 4 mean 3.7-4.7 ms (the
 per-step work is too small on an M5 for the pool to pay off). The simulator runs on the same host CPU and gives
 the same numbers in a Release test host; it does not predict a phone. Device runs: `device-smoke.sh` (needs an
 unlocked login keychain on the Mac for `codesign`).
 
 Device results (measured on 0.0.1, unchanged in 0.1.0; iPhone 13 Pro Max, A15, iOS 27, hosted `LinnetSampleTests`, release): all 6 tests pass; the audio
 MD5s equal the macOS host and simulator values for every thread count (same NEON kernels, thread-count independent
-result). Timings on the 67-step sentence (5.44 s of audio): threads 1 — prime 79 ms, first chunk 85 ms, mean step
-5.50 ms (worst 6.0), RTF 8.3 %; threads 0 (auto = 2 performance cores) — prime 46 ms, first chunk 51 ms, mean step
-4.57 ms (worst 7.2), RTF 6.6 %; threads 4 — mean step 17.2 ms (worst 97 ms), RTF 23 %: oversubscribing onto the
-efficiency cores hurts badly, which is why `auto` is capped at the performance-core count. Ten utterances back to back
+result). Timings on the 68-step sentence (5.44 s of audio): threads 1 — prime 79 ms, first chunk 85 ms, mean step
+5.50 ms (worst 6.0), RTF 8.3 %; threads 2 (`auto` resolved to the two performance cores when this was measured; it is
+one thread now) — prime 46 ms, first chunk 51 ms, mean step 4.57 ms (worst 7.2), RTF 6.6 %; threads 4 — mean step
+17.2 ms (worst 97 ms), RTF 23 %: oversubscribing onto the efficiency cores hurts badly, which is why `auto` never exceeds
+the performance-core count. Ten utterances back to back
 with `auto`: 333 steps, 26.6 s of audio in 3.9 s (RTF 14.6 %, includes ten primes and sustained-load scheduling).
 Recommended default on iOS: `threads = 0`, which the runtime resolves to one thread on Apple platforms (see below).
 
@@ -184,8 +187,8 @@ of 8 s, also the sample's default, does this) so the core runs at full clock and
 Baseline device (iPhone 11, A13, iOS 26, sample app, 80-step sentence): threads 1 — prime 97–106 ms, first chunk
 107–116 ms, mean step 7.1 ms (worst 9.6) without pacing; threads 2 (auto) — prime 61–74 ms, first chunk 72–86 ms,
 mean step 6.9–8.1 ms (the second thread helps the prime, not the step); under real-time pacing both show ≈ 22 ms
-per step for the power-management reason described above. The A13 is the oldest device the package targets and
-leaves a ten-fold margin against the 80 ms step budget. Hosted XCTests on the A13: 6/6, audio MD5s identical to the A15 and
+per step for the power-management reason described above. The A13 is the oldest device measured (the package
+targets iOS 15, which runs on older chips) and leaves a ten-fold margin against the 80 ms step budget. Hosted XCTests on the A13: 6/6, audio MD5s identical to the A15 and
 the Mac; threads 1 — 6.7 ms per step, threads 2 — 11.4 ms (worst 31), threads 4 — 47 ms: the pool hurts the step on
 Apple silicon, so `threads = 0` now means one thread there (the prime pass is the only part that gains from a second
 core, 97 → 68 ms).

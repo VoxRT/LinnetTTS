@@ -5,7 +5,7 @@
 Linnet is a lightweight on-device text-to-speech model: an autoregressive flow language model that emits one continuous 48-dimensional
 latent per 80 ms step (two 24-dimensional codec frames at 25 Hz) with a single flow evaluation per step, followed by a Vocos-style neural
 codec decoder that turns latents into 24 kHz audio. The model speaks English in a voice given as a voice-prompt latent,
-streams audio from the first step, and runs in real time on a single CPU core. It ships with two built-in voices; the encoder that produces
+streams audio from the first step, and runs in real time on a single phone- or desktop-class CPU core. It ships with two built-in voices; the encoder that produces
 latents from recordings is not part of this release, and creating new voices requires a separate license (see `WEIGHTS_LICENSE.md`).
 
 | | |
@@ -13,7 +13,7 @@ latents from recordings is not part of this release, and creating new voices req
 | Parameters | 41.4 M total: flow LM 31.5 M (text table 3.1 M), codec decoder 9.9 M |
 | Sample rate | 24 kHz, mono |
 | Latent grid | 25 Hz codec frames (24-dim); LM step 12.5 Hz (48-dim) |
-| Context | voice prompt (≈5 s → 63 LM positions) + text tokens + generated steps; tested up to ~11 s of output |
+| Context | voice prompt (the built-in voices: 6 s → 76 LM positions; training used ≈5 s prompts) + text tokens + generated steps, capped by `max_frames` (default 300 steps = 24 s) |
 | Text frontend | SentencePiece unigram, 6000 pieces, no phonemizer, no text normalisation inside the model |
 | Sampling | 1 flow step per frame; `temp` scales the Gaussian draw (default 0.3); classifier-free guidance `cfg` on the trunk output (default 2.0); EOS head |
 | Weights | safetensors `linnet-tts/1`; fp16 matrices for the runtime, fp32 reference |
@@ -63,7 +63,7 @@ redistributed with this model. The copyright of the recordings remains with thei
 |---|---|---|---|
 | Emilia-YODAS (en) | 4 192 | CC BY 4.0 | [amphion/Emilia-Dataset](https://huggingface.co/datasets/amphion/Emilia-Dataset) |
 | HiFiTTS-2 | 1 220 | CC BY 4.0; audio from LibriVox (public domain) | [nvidia/hifitts-2](https://huggingface.co/datasets/nvidia/hifitts-2) |
-| LibriTTS-R | 527 | CC BY 4.0 | [OpenSLR 141](https://www.openslr.org/141/) |
+| LibriTTS-R | 527 (LM-side selection; the codec used 507 h of the same corpus) | CC BY 4.0 | [OpenSLR 141](https://www.openslr.org/141/) |
 | synthetic speech for numbers, dates, currencies and similar formats | 74 | generated with Qwen3-TTS (Apache-2.0, no restrictions on outputs), in the voices of corpus speakers | [Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice](https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice) |
 
 About 10 % of the LM utterances also carried an alternative written form of the transcript (digits instead of words), generated with a text model.
@@ -89,23 +89,27 @@ Please cite the Emilia papers (arXiv 2407.05361, 2501.15907) when citing the dat
 - fp16 vs fp32 weights: no audible difference in blind listening; the two produce different but equally valid samples because the one-step flow
   amplifies tiny numerical differences into a different trajectory.
 - Numerical parity: the PyTorch package reproduces the training-side implementation bit for bit on the reference vectors in `tests/goldens/ref`;
-  the Rust runtime matches the PyTorch package to 1e-5 on latents.
+  the Rust runtime matches the PyTorch package within 1e-4 on latents (measured ≤ 5e-5) and within 1e-2 on audio (SNR ≥ 70 dB on the
+  goldens; the decoder amplifies latent-level differences).
 
 ## Performance (Rust runtime, fp16 weights)
 
-One step produces 80 ms of audio (one LM step plus two decoder frames). Output is bit-identical for any thread count.
+One step produces 80 ms of audio (one LM step plus two decoder frames). Output is bit-identical for any thread count. Real-time
+factor = mean step time / 80 ms; "first audio" is the prime pass plus the first step, measured in a command-line or test harness
+unless stated.
 
 | device | threads | per step | first audio after text | real-time factor |
 |---|---|---|---|---|
-| desktop x86-64 (AVX2) | 1 | 8.8 ms | 74 ms | 11 % |
-| Snapdragon 662, Cortex-A73 (Android) | 1 | 42.4 ms | — | 62 % |
-| Snapdragon 662, 4 big cores (Android, auto) | 4 | 14.3 ms | — | 21 % |
-| Raspberry Pi Zero 2 W, Cortex-A53 1 GHz (Linux) | 1 | 158 ms | — | 242 % |
-| Raspberry Pi Zero 2 W, 4 cores (Linux, auto) | 4 | 59–60 ms | — | 88 % |
-| iPhone 11, A13 (iOS) | 1 (auto) | 6.7–7.1 ms | 107–116 ms | 9 % |
-| iPhone 13 Pro Max, A15 (iOS) | 1 (auto) | 5.5 ms | 85 ms | 8.3 % |
-| iPhone 13 Pro Max, A15 (iOS) | 2 | 4.6 ms | 51 ms | 6.6 % |
-| Apple M5 (macOS) | 1 | 3.3 ms | — | 5 % |
+| desktop x86-64, Core i9-13900K (AVX2) | 1 | 7.0–7.4 ms | 75–103 ms | 9 % |
+| desktop x86-64, Core i9-13900K (AVX2, auto) | 4 | 2.5 ms | 25 ms | 3 % |
+| Snapdragon 662, Cortex-A73 (Android) | 1 | 42.4 ms | — | 53 % |
+| Snapdragon 662, 4 big cores (Android, auto) | 4 | 14.3 ms | ≈250 ms (sample app) | 18 % |
+| Raspberry Pi Zero 2 W, Cortex-A53 1 GHz (Linux) | 1 | 158 ms | — | 198 % |
+| Raspberry Pi Zero 2 W, 4 cores (Linux, auto) | 4 | 59–60 ms | — | 75 % |
+| iPhone 11, A13 (iOS) | 1 (auto) | 6.7–7.1 ms | 107–116 ms | 8–9 % |
+| iPhone 13 Pro Max, A15 (iOS) | 1 (auto) | 5.5 ms | 85 ms | 7 % |
+| iPhone 13 Pro Max, A15 (iOS) | 2 | 4.6 ms | 51 ms | 6 % |
+| Apple M5 (macOS) | 1 | 3.3 ms | — | 4 % |
 
 Measured without real-time pacing; when synthesis is paced to playback, mobile power management raises the step time 3–4× (see
 `bindings/README.md`, "Playback and step time"). An integer (W8A8) variant for weaker devices and a browser build are planned for a later release.
@@ -128,7 +132,8 @@ The voices may be used as product voices under `WEIGHTS_LICENSE.md`. Because the
 - English only; other languages produce garbage.
 - Numbers, dates, currencies, phone numbers, version strings: the model reads written-out words reliably, raw digit formats only sometimes
   (for example "1359" or "$19.99" are often misread). Normalise text to words before synthesis.
-- Voice latents: the model is conditioned on a latent of about 5 s of clean speech from one speaker, peak-normalised to −3 dBFS; short or
+- Voice latents: the model is conditioned on a latent of about 5–6 s of clean speech from one speaker, peak-normalised to −3 dBFS (the
+  built-in voices: 6 s); short or
   spontaneous prompts drift in timbre, and room acoustics or noise degrade the voice. This describes the model's behaviour, not a permission:
   the standard license allows only the built-in voices and voices VoxRT has expressly authorised in writing.
 - Audio quality: a slight roughness is audible on headphones in some utterances; not audible on laptop speakers.

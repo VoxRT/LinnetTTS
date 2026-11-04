@@ -1,5 +1,6 @@
 #!/usr/bin/env python
-"""Convert training checkpoints (LM + codec) into a LinnetTTS safetensors weight file.
+"""Maintainer tool: convert training checkpoints (LM + codec) into a LinnetTTS safetensors weight file.
+The checkpoints are not published; users download the released `.safetensors` files instead.
 
     python tools/convert_from_checkpoint.py --lm <lm_checkpoint.pt> --codec <codec_checkpoint.ckpt> \
         --out local/linnet-en-35m.safetensors [--no-ema]

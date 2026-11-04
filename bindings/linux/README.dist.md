@@ -2,8 +2,8 @@
 
 Lightweight on-device text-to-speech: a flow language model over a 25 Hz continuous-latent codec with a
 Vocos-style decoder, ~41M parameters, streaming synthesis at 24 kHz. Built from the Rust runtime for
-`@TARGET@`; the library has no dependencies beyond libc, libm, libpthread and libdl, and picks AVX2 (x86_64)
-or NEON (aarch64) kernels at run time.
+`@TARGET@`; the library has no dependencies beyond libc, libm, libpthread, libdl and libgcc_s; the x86_64 build picks
+AVX2+FMA kernels at run time, the aarch64 build uses NEON.
 
 ```
 lib/liblinnet_tts.so    shared library
@@ -15,6 +15,7 @@ examples/               synth.c (offline), stream.c (streaming), Makefile
 ## Use
 
 ```c
+#include <stdlib.h>
 #include "linnet_tts.h"
 
 linnet_model *model; linnet_voice *voice;
@@ -31,8 +32,9 @@ linnet_model_free(model);
 
 Streaming: `linnet_session_new` → `linnet_session_prime(text)` → `linnet_session_step` until it writes 0
 samples. Each step is 80 ms of audio (1920 samples); the first chunk is 720 samples shorter and the last is
-720 zeros, so the chunks concatenate to exactly what `linnet_synthesize` returns. All functions return
-`LINNET_OK` (0) or a negative `LINNET_ERR_*` code; `linnet_last_error()` has the message.
+720 zeros (an utterance that ends on its first step yields no chunk), so the chunks concatenate to exactly what
+`linnet_synthesize` returns. Every fallible function returns `LINNET_OK` (0) or a negative `LINNET_ERR_*` code;
+`linnet_last_error()` has the message.
 
 Parameters (`linnet_params`, pass NULL for defaults): `temp` 0.3, `cfg` 2.0, `eos_threshold` -1.0,
 `max_frames` 300 (24 s), `seed` 0. The same seed and parameters always give the same audio.

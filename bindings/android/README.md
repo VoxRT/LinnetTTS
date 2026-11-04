@@ -43,9 +43,10 @@ Nothing may be closed while another thread is still using it, but a session keep
 own, so closing the model before its sessions is safe. Loading (a few hundred ms) and synthesis belong off the
 main thread. `AudioTrackPlayer.write` blocks when the track buffer is full, which paces synthesis to real time.
 
-**Memory.** The fp16 model is about 70 MB in RAM; a session adds a few MB (KV caches sized by `maxFrames`).
+**Memory.** The fp16 weights file is 83 MB and stays resident (about 85 MB; roughly twice that transiently while
+loading); a session adds about 20 MB of KV caches with the default `maxFrames` and guidance (half without guidance).
 `LinnetModel.fromBytes` is convenient for `assets/`, but the images pass through the Java heap and are copied
-once more natively; for a 70 MB file copy the assets to `filesDir` on first run and use the path constructor.
+once more natively; for an 83 MB file copy the assets to `filesDir` on first run and use the path constructor.
 
 ## Layout
 
@@ -80,7 +81,7 @@ echo "sdk.dir=/path/to/Android/Sdk" > local.properties   # or export ANDROID_HOM
 
 `build-native.sh` runs `cargo ndk --platform 24 -t <abi> build --release` (fat LTO, stripped) and removes the
 runtime's own cdylib that cargo-ndk copies alongside; the Gradle build fails with a pointer to the script when
-the `.so` files are missing. Native library sizes (measured on 0.0.1; unchanged in 0.1.0): arm64-v8a 680 KB, x86_64 786 KB. Nothing but
+the `.so` files are missing. Native library sizes (0.1.0): arm64-v8a 756 KB, x86_64 805 KB. Nothing but
 `libc`, `libm` and `libdl` is required at run time; minSdk 24.
 
 The runtime's release profile (fat LTO, one codegen unit) applies to these builds too. No `target-cpu` is set:
@@ -101,7 +102,8 @@ cp jni-crate/target/aarch64-linux-android/release/liblinnet_tts_jni.so linnet-tt
 
 ### Using the AAR
 
-Until the artefact is published, publish to the local Maven repository or drop the AAR into the app:
+The AAR `linnet-tts-<version>.aar` is attached to each GitHub release (no Maven repository yet). Drop it into the
+app, or build it here and publish it to the local Maven repository:
 
 ```sh
 ./gradlew :linnet-tts:publishToMavenLocal     # com.voxrt.linnet:linnet-tts:0.1.0 in ~/.m2
@@ -110,15 +112,15 @@ Until the artefact is published, publish to the local Maven repository or drop t
 ```kotlin
 // settings.gradle.kts: repositories { mavenLocal(); google(); mavenCentral() }
 dependencies { implementation("com.voxrt.linnet:linnet-tts:0.1.0") }
-// or: implementation(files("libs/linnet-tts-release.aar"))
+// or: implementation(files("libs/linnet-tts-0.1.0.aar"))   // the release asset (a local build is linnet-tts-release.aar)
 ```
 
 The AAR carries `consumer-rules.pro`, so R8 in the app keeps `LinnetNative` (whose `external fun`s are instance
 methods of a Kotlin object, resolved by name from the `.so`) and `LinnetException` (constructed from native
 code). No extra rules are needed in the app; the sample's release build runs R8 against them.
 
-TODO: Maven Central / JitPack publishing (`maven-publish` is configured with the POM; a signing step and the
-repository are missing).
+Maven Central / JitPack publishing is planned for a later release (`maven-publish` is configured with the POM; a
+signing step and the repository are missing).
 
 ## Sample app
 
@@ -138,9 +140,10 @@ adb shell run-as com.voxrt.linnet.sample sh -c 'mkdir -p files && cp /data/local
 
 (`run-as` works for the debug build. Model files are distributed separately, see `WEIGHTS_LICENSE.md`.)
 
-Sample app on a Snapdragon 662 (Redmi 9T), 7.0 s sentence, `threads` auto (4 big cores), playback on: 15.9-18.4 ms per step (RTF 20-23 %),
+Sample app on a Snapdragon 662 (Redmi 9T), 7.0 s sentence, `threads` auto (4 big cores), playback on: 15.9-18.4 ms per step (RTF 20-23 %,
+steps over audio duration as the app computes it; the root README tables use step / 80 ms),
 worst step 33-39 ms, first chunk 244-260 ms after the Speak tap; the big-core affinity of the pool (see `bindings/README.md`, "Threads") is
-what brings the app close to the 14.5 ms of the command-line build.
+what brings the app close to the 14.3 ms of the command-line build.
 
 ## Tests
 

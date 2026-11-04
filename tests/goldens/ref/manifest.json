@@ -2,7 +2,7 @@
  "created": "2026-11-03 15:46",
  "lm_step": 800000,
  "lm_ema": true,
- "codec": "canon-avg (ec0b-vocosfull-avg-pins/it1000000.ckpt via load_ec0b_any)",
+ "codec": "linnet-en-35m decoder (weights-v1)",
  "torch": "2.13.0+cu130",
  "sample_rate": 24000,
  "prompt_sec": 6.0,
@@ -97,7 +97,7 @@
    "dtype": "f32le",
    "sha256": "ce60dd5385009f6f82ab42a825e047c6b1cfcb0a0b9ef84049680089a2e1ea7a"
   },
-  "note": "latents_24 = 60 кадров × 24 (пары → 30 шагов × 48 в порядке reshape); wav_raw — выход decoder без сдвига; wav_shifted — после сдвига 720 и паддинга"
+  "note": "latents_24 = 60 frames x 24 (pairs -> 30 steps x 48 in reshape order); wav_raw = decoder output without the delay shift; wav_shifted = after the 720-sample shift and padding"
  },
  "cases": {
   "f1__fox": {
@@ -153,7 +153,7 @@
    },
    "steps_drawn": 33,
    "frames_kept": 32,
-   "note": "noise_unit[i] — розыгрыш на шаге i до умножения на sqrt(temp); последний розыгрыш — на шаге EOS (кадр не сохранён)"
+   "note": "noise_unit[i] = the draw at step i before scaling by sqrt(temp); the last draw belongs to the EOS step (no frame stored)"
   },
   "f1__window": {
    "voice": "f1",
@@ -205,7 +205,7 @@
    },
    "steps_drawn": 27,
    "frames_kept": 26,
-   "note": "noise_unit[i] — розыгрыш на шаге i до умножения на sqrt(temp); последний розыгрыш — на шаге EOS (кадр не сохранён)"
+   "note": "noise_unit[i] = the draw at step i before scaling by sqrt(temp); the last draw belongs to the EOS step (no frame stored)"
   },
   "f1__half4": {
    "voice": "f1",
@@ -256,7 +256,7 @@
    },
    "steps_drawn": 25,
    "frames_kept": 24,
-   "note": "noise_unit[i] — розыгрыш на шаге i до умножения на sqrt(temp); последний розыгрыш — на шаге EOS (кадр не сохранён)"
+   "note": "noise_unit[i] = the draw at step i before scaling by sqrt(temp); the last draw belongs to the EOS step (no frame stored)"
   },
   "m1__fox": {
    "voice": "m1",
@@ -311,7 +311,7 @@
    },
    "steps_drawn": 29,
    "frames_kept": 28,
-   "note": "noise_unit[i] — розыгрыш на шаге i до умножения на sqrt(temp); последний розыгрыш — на шаге EOS (кадр не сохранён)"
+   "note": "noise_unit[i] = the draw at step i before scaling by sqrt(temp); the last draw belongs to the EOS step (no frame stored)"
   },
   "m1__window": {
    "voice": "m1",
@@ -363,7 +363,7 @@
    },
    "steps_drawn": 25,
    "frames_kept": 24,
-   "note": "noise_unit[i] — розыгрыш на шаге i до умножения на sqrt(temp); последний розыгрыш — на шаге EOS (кадр не сохранён)"
+   "note": "noise_unit[i] = the draw at step i before scaling by sqrt(temp); the last draw belongs to the EOS step (no frame stored)"
   },
   "m1__half4": {
    "voice": "m1",
@@ -414,7 +414,7 @@
    },
    "steps_drawn": 24,
    "frames_kept": 23,
-   "note": "noise_unit[i] — розыгрыш на шаге i до умножения на sqrt(temp); последний розыгрыш — на шаге EOS (кадр не сохранён)"
+   "note": "noise_unit[i] = the draw at step i before scaling by sqrt(temp); the last draw belongs to the EOS step (no frame stored)"
   },
   "f1__cfg1": {
    "voice": "f1",
@@ -469,7 +469,7 @@
    },
    "steps_drawn": 37,
    "frames_kept": 36,
-   "note": "noise_unit[i] — розыгрыш на шаге i до умножения на sqrt(temp); последний розыгрыш — на шаге EOS (кадр не сохранён)"
+   "note": "noise_unit[i] = the draw at step i before scaling by sqrt(temp); the last draw belongs to the EOS step (no frame stored)"
   },
   "m1__long": {
    "voice": "m1",
@@ -554,7 +554,7 @@
    },
    "steps_drawn": 141,
    "frames_kept": 140,
-   "note": "noise_unit[i] — розыгрыш на шаге i до умножения на sqrt(temp); последний розыгрыш — на шаге EOS (кадр не сохранён)"
+   "note": "noise_unit[i] = the draw at step i before scaling by sqrt(temp); the last draw belongs to the EOS step (no frame stored)"
   }
  },
  "note": "Reference input/output vectors produced by the training-side implementation of the same model; see tests/test_ref_goldens.py",

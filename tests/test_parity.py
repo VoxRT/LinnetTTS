@@ -9,7 +9,7 @@ the environment points at it:
                           decoder(z: Tensor[B,T,24]) -> Tensor[B,1,T*960]          (raw codec decoder)
                           decode(latents: Tensor[T,48]) -> Tensor[T*1920]          (with output-delay handling)
                         `generate` must draw exactly one torch.randn(1, 48) from the global RNG per step.
-    LINNET_WEIGHTS      converted safetensors (tools/convert_from_checkpoint.py)
+    LINNET_WEIGHTS      the released fp32 safetensors (or a conversion by the maintainers' tools/convert_from_checkpoint.py)
     LINNET_TOKENIZER    SentencePiece model
     LINNET_VOICE        voice-prompt latents .npy [Tv, 48]
 

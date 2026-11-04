@@ -10,10 +10,12 @@
 #   python/pyproject.toml, python/linnet_tts_torch/__init__.py      PyTorch package `linnet-tts-torch`
 #   bindings/android/jni-crate/Cargo.toml                           Android JNI crate
 #   bindings/android/gradle.properties (VERSION_NAME)               AAR com.voxrt.linnet:linnet-tts
+#   Package.swift (let version)                                     SwiftPM binary target URL
+#   bindings/ios/Sample/LinnetSample.xcodeproj/project.pbxproj      MARKETING_VERSION of the sample app
 #   runtime/Cargo.lock, bindings/python/Cargo.lock,
 #   bindings/android/jni-crate/Cargo.lock                           lock entries of the crates above
 # The C API, the Python module, the Kotlin and the Swift wrappers report the version of the
-# linnet-tts crate at run time, so nothing else carries a copy.
+# linnet-tts crate at run time.
 set -euo pipefail
 
 if [ $# -ne 1 ]; then sed -n '2,4p' "$0" >&2; exit 2; fi
@@ -45,6 +47,8 @@ for f in runtime/linnet-ops/Cargo.toml runtime/linnet-tts/Cargo.toml \
 done
 rewrite python/linnet_tts_torch/__init__.py "s/^__version__ = \"[^\"]*\"/__version__ = \"$V\"/"
 rewrite bindings/android/gradle.properties "s/^VERSION_NAME=.*/VERSION_NAME=$V/"
+rewrite Package.swift "s/^let version = \"[^\"]*\"/let version = \"$V\"/"
+rewrite bindings/ios/Sample/LinnetSample.xcodeproj/project.pbxproj "s/MARKETING_VERSION = [^;]*;/MARKETING_VERSION = $V;/"
 
 # Cargo.lock: the version line that follows the name of one of our crates.
 crates='linnet-ops|linnet-tts|linnet-tts-py|linnet-tts-jni'
@@ -63,6 +67,8 @@ for f in runtime/linnet-ops/Cargo.toml runtime/linnet-tts/Cargo.toml bindings/py
 done
 check python/linnet_tts_torch/__init__.py "^__version__ = \"$V\"\$"
 check bindings/android/gradle.properties "^VERSION_NAME=$V\$"
+check Package.swift "^let version = \"$V\"\$"
+check bindings/ios/Sample/LinnetSample.xcodeproj/project.pbxproj "MARKETING_VERSION = $V;"
 [ "$bad" = 0 ] || exit 1
 
 # The lock files must still match their manifests (no network needed).

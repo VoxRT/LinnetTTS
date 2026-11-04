@@ -24,12 +24,19 @@ under the Linnet Weights License (see `WEIGHTS_LICENSE.md`), which is not an ope
 The license text governs; this summary does not. The test fixtures in `tests/goldens/` include copies of the two built-in
 voices; `tests/goldens/NOTICE.md` states their license and the permission to redistribute them with the repository.
 
-The model is called `linnet-en-35m` after its roughly 35 M parameters outside the 6001×512 text token table (41.4 M in total:
-flow LM 31.5 M including the 3.1 M text table, decoder 9.9 M); the fp16 weights file is 83 MB.
+The model is called `linnet-en-35m`; the number is a label from the original parameter budget, not an exact count (41.4 M in total:
+flow LM 31.5 M including the 3.1 M text table, decoder 9.9 M; 38.4 M outside the 6001×512 text table). The fp16 weights file is 83 MB.
 
 ## Quick start
 
-1. **Weights.** Download the `weights-v1` release (see "Weights" below) and unpack it into `local/` at the repository root.
+1. **Weights.** Download the archive of the `weights-v1` release (see "Weights" below) and unpack it into `local/` at the
+   repository root. The archive has one top-level directory, so strip it:
+
+   ```sh
+   mkdir -p local && tar -xzf linnet-en-35m-weights-v1.tar.gz -C local --strip-components=1
+   (cd local && sha256sum -c SHA256SUMS)
+   ```
+
    Every test, script and README in this repository assumes this layout:
 
    ```
@@ -63,7 +70,7 @@ flow LM 31.5 M including the 3.1 M text table, decoder 9.9 M); the fp16 weights 
    ```
 
    Streaming: `session = model.session(voice, seed=0)`, `session.prime(text)`, then iterate `for chunk in session`
-   (80 ms per step). See `bindings/python/README.md`.
+   (1920 samples = 80 ms per step; the first chunk is 720 samples shorter, the last one is 720 zeros). See `bindings/python/README.md`.
 
 4. **PyTorch reference** (`python/`, fp32, bit-exact against the training-side vectors, not optimised for speed):
    `pip install ./python`.
@@ -80,10 +87,12 @@ flow LM 31.5 M including the 3.1 M text table, decoder 9.9 M); the fp16 weights 
 
    See `python/README.md`.
 
-5. **Tests.** With the files in `local/` the tests find them on their own; the environment variables below redirect
-   them (one file each) or the whole directory:
+5. **Tests.** With the files in `local/` the Rust, wheel, Android and iOS tests find them on their own;
+   `tests/test_ref_goldens.py` needs `LINNET_WEIGHTS` and `LINNET_TOKENIZER` set explicitly (it is skipped otherwise). The
+   environment variables redirect the tests to one file each or to a whole directory:
 
-   - `LINNET_WEIGHTS` — fp32 weights for the Rust golden tests and `tests/test_ref_goldens.py` (default `local/linnet-en-35m.safetensors`)
+   - `LINNET_WEIGHTS` — fp32 weights for the Rust golden tests (default `local/linnet-en-35m.safetensors`) and, with
+     `LINNET_TOKENIZER`, for `tests/test_ref_goldens.py` (no default)
    - `LINNET_WEIGHTS_FP16` — fp16 weights for the Rust golden tests (default `local/linnet-en-35m.fp16.safetensors`)
    - `LINNET_TOKENIZER` — SentencePiece model (default `local/tokenizer.model`)
    - `LINNET_VOICE` — voice file for the Rust golden tests (default `local/voices/linnet-en-f1.npy`)
@@ -98,20 +107,22 @@ flow LM 31.5 M including the 3.1 M text table, decoder 9.9 M); the fp16 weights 
 
 ## Performance
 
-Rust runtime, fp16 weights, one step = 80 ms of audio (an LM step plus two decoder frames). Measured without real-time pacing;
-the audio is bit-identical for every thread count and across all these devices.
+Rust runtime, fp16 weights, one step = 80 ms of audio (an LM step plus two decoder frames). Measured without real-time pacing.
+The audio is bit-identical for every thread count; the reference synthesis of the weights release (`MANIFEST.json`,
+`reference_md5`) gave the same MD5 on every device listed.
 
 | device | threads | per step | real-time factor |
 |---|---|---|---|
-| Apple M5 (macOS) | 1 | 3.3 ms | 5 % |
-| iPhone 13 Pro Max, A15 | 1 (auto) / 2 | 5.5 / 4.6 ms | 8.3 / 6.6 % |
-| iPhone 11, A13 | 1 (auto) | 6.7–7.1 ms | 9 % |
-| desktop x86-64, AVX2 | 1 | 8.8 ms | 11 % |
-| Snapdragon 662 (Redmi 9T), Cortex-A73 | 1 / 4 (auto) | 42.4 / 14.3 ms | 62 / 21 % |
-| Raspberry Pi Zero 2 W, Cortex-A53 1 GHz | 1 / 4 (auto) | 158 / 59–60 ms | 242 / 88 % |
+| Apple M5 (macOS) | 1 | 3.3 ms | 4 % |
+| iPhone 13 Pro Max, A15 | 1 (auto) / 2 | 5.5 / 4.6 ms | 7 / 6 % |
+| iPhone 11, A13 | 1 (auto) | 6.7–7.1 ms | 8–9 % |
+| desktop x86-64 (Core i9-13900K), AVX2 | 1 / 4 (auto) | 7.0–7.4 / 2.5 ms | 9 / 3 % |
+| Snapdragon 662 (Redmi 9T), Cortex-A73 | 1 / 4 (auto) | 42.4 / 14.3 ms | 53 / 18 % |
+| Raspberry Pi Zero 2 W, Cortex-A53 1 GHz | 1 / 4 (auto) | 158 / 59–60 ms | 198 / 75 % |
 
-First audio arrives 50–120 ms after the text on the phones and about 250 ms on the Snapdragon 662 (the prime pass plus one step).
-Peak memory is about 160 MB on Linux. Details, the in-app numbers and the effect of playback pacing: `docs/model-card.md`
+Real-time factor = mean step time / 80 ms (the sentence-level figures in the binding READMEs also include the prime pass).
+First audio arrives 50–120 ms after the text on the phones and about 250 ms in the Android sample app on the Snapdragon 662
+(the prime pass plus one step). Peak memory is about 160 MB on Linux. Details, the in-app numbers and the effect of playback pacing: `docs/model-card.md`
 ("Performance") and `bindings/README.md` ("Threads", "Playback and step time").
 
 ## Weights

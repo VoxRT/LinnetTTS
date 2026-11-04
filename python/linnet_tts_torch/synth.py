@@ -78,7 +78,8 @@ class Linnet:
 
     @staticmethod
     def load_voice(path: str | Path) -> torch.Tensor:
-        """Voice-prompt latents [Tv, 48] saved as .npy by the (separate) voice-encoding tool."""
+        """Voice-prompt latents [Tv, 48] from a .npy file; the voice files are distributed with the weights release
+        (this package does not compute them)."""
         arr = np.load(str(path))
         if arr.ndim != 2 or arr.shape[1] != 48:
             raise ValueError(f"voice latents must be [T, 48], got {arr.shape}")

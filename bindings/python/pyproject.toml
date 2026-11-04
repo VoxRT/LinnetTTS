@@ -10,16 +10,24 @@ readme = "README.md"
 license = { text = "Apache-2.0" }
 requires-python = ">=3.9"
 dependencies = ["numpy>=1.21"]
+keywords = ["text-to-speech", "tts", "speech-synthesis", "on-device", "streaming"]
 classifiers = [
+  "Development Status :: 4 - Beta",
   "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
   "Programming Language :: Rust",
   "License :: OSI Approved :: Apache Software License",
   "Operating System :: POSIX :: Linux",
+  "Operating System :: MacOS",
   "Topic :: Multimedia :: Sound/Audio :: Speech",
 ]
 
 [project.urls]
 Homepage = "https://github.com/VoxRT/LinnetTTS"
+Repository = "https://github.com/VoxRT/LinnetTTS"
+Changelog = "https://github.com/VoxRT/LinnetTTS/blob/main/CHANGELOG.md"
+Issues = "https://github.com/VoxRT/LinnetTTS/issues"
+Weights = "https://github.com/VoxRT/LinnetTTS/releases/tag/weights-v1"
 
 [tool.maturin]
 python-source = "python"

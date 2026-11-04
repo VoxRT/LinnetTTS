@@ -20,8 +20,9 @@ Shapes are derived from the config; loaders validate every tensor against the de
 
 ## Tensors (223 in `linnet-en-35m`, 41.4 M parameters)
 
-Dtype policy: the reference file is fp32. The shipped runtime file is fp16 for all weight matrices and fp32 for biases, norms,
-`latent_mean`/`latent_std` and the layer-scale vectors; all accumulation in the runtime is fp32. An int8 per-row variant of the
+Dtype policy: the reference file is fp32. The shipped runtime file is fp16 for all 2-D weight matrices and fp32 for everything else
+(biases, norms, depthwise convolution kernels, `lm.bos_voice`/`lm.bos_latent`, `latent_mean`/`latent_std` and the layer-scale
+vectors); all accumulation in the runtime is fp32. An int8 per-row variant of the
 matmul weights (with fp32 scales) is planned as a separate file, not a flag inside this one.
 
 ### Flow LM (`lm.*`)
