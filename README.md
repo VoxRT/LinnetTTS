@@ -7,6 +7,8 @@ flow LM (1 NFE per frame) over a 25 Hz continuous-latent neural codec with a Voc
 recording) are produced by VoxRT's encoder, which is not published, and are available under a separate license (see
 `WEIGHTS_LICENSE.md`).
 
+**Try it:** [live demo that runs in your browser tab](https://voxrt.com/text-to-speech#live-demo) · [demo Space on Hugging Face](https://huggingface.co/spaces/VoxRT/linnet-tts) · [audio samples, and the same sentence from Piper, Kokoro and pocket-tts](https://huggingface.co/VoxRT/linnet-en-35m)
+
 - `python/` — `linnet_tts_torch`: reference model definition and inference in PyTorch (no training code; see `python/README.md`). The on-device Python package `linnet-tts` is built from the Rust runtime in `bindings/python/`.
 - `runtime/` — Rust runtime: `linnet-ops` (only the kernels this model uses) and `linnet-tts` (model, streaming session, C API).
 - `bindings/` — platform wrappers: Android AAR, iOS Swift package (xcframework), Linux C library and Python wheel. Browser (WASM) is deferred to a later release.
