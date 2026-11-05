@@ -11,7 +11,7 @@ pip install linnet-tts soundfile      # soundfile only for writing WAV files in 
 ```
 
 Wheels on PyPI: manylinux 2.17 x86_64 and aarch64, macOS 11+ on Apple silicon; no Windows, Intel-macOS or source
-distribution in 0.1.0 (build from the repository on other platforms, see "Build"). The model files are not in the
+distribution in 0.1.1 (build from the repository on other platforms, see "Build"). The model files are not in the
 wheel: download the weights release https://github.com/VoxRT/LinnetTTS/releases/tag/weights-v1 (the fp16 weights,
 `tokenizer.model` and a voice `.npy`). They are licensed under the Linnet Weights License
 (https://github.com/VoxRT/LinnetTTS/blob/main/WEIGHTS_LICENSE.md), not Apache-2.0. Source, docs and the streaming

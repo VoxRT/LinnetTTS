@@ -89,8 +89,9 @@ Please cite the Emilia papers (arXiv 2407.05361, 2501.15907) when citing the dat
 - fp16 vs fp32 weights: no audible difference in blind listening; the two produce different but equally valid samples because the one-step flow
   amplifies tiny numerical differences into a different trajectory.
 - Numerical parity: the PyTorch package reproduces the training-side implementation bit for bit on the reference vectors in `tests/goldens/ref`;
-  the Rust runtime matches the PyTorch package within 1e-4 on latents (measured ≤ 5e-5) and within 1e-2 on audio (SNR ≥ 70 dB on the
-  goldens; the decoder amplifies latent-level differences).
+  with the fp32 weights the Rust runtime matches the PyTorch package within 1e-4 on latents (measured ≤ 5e-5) and within 1e-2 on audio
+  (SNR ≥ 70 dB on the goldens; the decoder amplifies latent-level differences). The fp16 export is not held to these tolerances: it
+  drifts further, as described above.
 
 ## Performance (Rust runtime, fp16 weights)
 
@@ -144,8 +145,8 @@ The voices may be used as product voices under `WEIGHTS_LICENSE.md`. Because the
 - Audio quality: a slight roughness is audible on headphones in some utterances; not audible on laptop speakers.
 - Under the standard license the model may be used with the built-in voices and with voices VoxRT has expressly authorised in writing.
   Cloning any voice (including your own, with consent), designing new voices, fine-tuning the weights or saving modified, quantised or
-  converted copies of them, training models with the weights or their output, and offering general-purpose text-to-speech to others as an
-  API or service, free or paid, require a separate written license (help@voxrt.com). It may not be used to impersonate a real person
+  converted copies of them, training models with the weights or their output, and offering general-purpose text-to-speech to others in any
+  form, free or paid, including an API, SDK, downloadable tool or hosted service, require a separate written license (help@voxrt.com). It may not be used to impersonate a real person
   deceptively or to present its output as a genuine recording. See `WEIGHTS_LICENSE.md`.
 - Not designed or certified as the sole means of conveying safety-critical or emergency information; see `WEIGHTS_LICENSE.md`, Section 10.
 

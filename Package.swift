@@ -1,5 +1,6 @@
 // swift-tools-version:5.9
-// LinnetTTS Swift package (iOS 15+, macOS 12+): the Swift API in bindings/ios/LinnetTTS/Sources over the C API of the
+// LinnetTTS Swift package (iOS 15+; macOS 12+ for host builds and tests only, not a supported product): the Swift API
+// in bindings/ios/LinnetTTS/Sources over the C API of the
 // Rust runtime, which ships as a prebuilt static LinnetTTS.xcframework attached to each GitHub release.
 //
 //   .package(url: "https://github.com/VoxRT/LinnetTTS.git", from: "0.1.0")
@@ -24,7 +25,7 @@ let binary: Target = ProcessInfo.processInfo.environment["LINNET_LOCAL_XCFRAMEWO
 
 let package = Package(
     name: "LinnetTTS",
-    platforms: [.iOS(.v15), .macOS(.v12)],
+    platforms: [.iOS(.v15), .macOS(.v12)],   // macOS: host builds and tests only
     products: [
         .library(name: "LinnetTTS", targets: ["LinnetTTS"]),
     ],

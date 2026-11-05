@@ -67,11 +67,14 @@ curl -LO https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-fil
 curl -LO https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin
 cd ..
 # pocket-tts downloads its own weights on first use.
-for s in linnet pocket kokoro-fp32 piper-medium piper-high; do
+for s in linnet kokoro-fp32 piper-medium piper-high; do
   taskset -c 2 python tools/bench_cpu_tts.py $s --threads 1
   taskset -c 2,4,6,8 python tools/bench_cpu_tts.py $s --threads 4
 done
+# pocket-tts runs a decoder thread next to the torch thread, so its 1-thread run gets two cores.
+taskset -c 2,4 python tools/bench_cpu_tts.py pocket --threads 1
+taskset -c 2,4,6,8 python tools/bench_cpu_tts.py pocket --threads 4
 ```
 
 `tools/bench_cpu_tts.py` prints one JSON line per run (per-text audio seconds, generation seconds, first-chunk seconds, RTF,
-peak RSS). Pin pocket-tts to two cores for its 1-thread run.
+peak RSS).

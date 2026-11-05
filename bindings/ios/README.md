@@ -1,8 +1,9 @@
-# LinnetTTS for iOS (and macOS)
+# LinnetTTS for iOS
 
 Swift package `LinnetTTS` over the C API of the Rust runtime in `runtime/linnet-tts`, shipped as a static
 `LinnetTTS.xcframework`, plus a one-screen SwiftUI sample. On-device, streaming, 24 kHz, fp16 weights; the API
-mirrors the Kotlin and Python packages one to one.
+mirrors the Kotlin and Python packages one to one. The xcframework also carries a macOS slice so that `swift build` and
+`swift test` work on an Apple-silicon host; macOS is not a supported product.
 
 ```swift
 import LinnetTTS
@@ -46,7 +47,7 @@ is enforced by ARC; drop references in any order.
 **Threads.** `LinnetModel` and `Voice` are immutable (apart from `threads`) and may be shared across threads and
 sessions. A `LinnetSession` is single-threaded: drive it from one queue at a time; different sessions of the
 same model may run concurrently. `threads` selects the worker count of the model's persistent pool (1 =
-single-threaded, 0 = automatic, which is one thread on iOS and macOS, where a second core does not pay off); `SynthParams.threads` applies it when a
+single-threaded, 0 = automatic, which is one thread on Apple platforms because it is tuned for the phones, where a second core does not pay off); `SynthParams.threads` applies it when a
 session is created. The audio is bit-identical for every thread count. Change it between utterances, not while
 a session steps. `LinnetPlayer.write` blocks while more than `bufferMillis` (default 8000 ms) of audio is queued,
 which paces synthesis to real time when the queue is small; `stop()` may be called from any thread.

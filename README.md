@@ -17,13 +17,18 @@ recording) are produced by VoxRT's encoder, which is not published, and are avai
 Code is licensed under Apache-2.0 (see `LICENSE`). The model weights, tokenizer and voice files are distributed separately
 under the Linnet Weights License (see `WEIGHTS_LICENSE.md`), which is not an open-source license. In short:
 
-- **Free, including commercially:** running the unmodified weights with the built-in voices inside your own products, on
-  devices and on servers, including paid and closed-source products; shipping the unmodified weights as part of your
-  product; selling audio you generate.
+- **Free, including commercially:** using the unmodified weights with the built-in voices inside your own products, on
+  devices and on servers, including paid and closed-source products; speech as part of your product, such as read-aloud,
+  assistants and notifications; shipping the unmodified weights with your product; selling audio you generate, subject to
+  the restrictions on outputs (no use as a voice or cloning prompt for another system, no model training, and your client
+  contracts must say so).
 - **Requires a separate written license from VoxRT** (help@voxrt.com): creating or cloning voices (including your own);
   fine-tuning the weights or saving modified, quantised or converted copies of them (converting or quantising in memory at
   load time is allowed); training any model with the weights or their output; offering general-purpose text-to-speech to
-  others as an API or service, free or paid; and publishing the weights outside your product.
+  others in any form, free or paid, including an API, SDK, downloadable tool or hosted service; and distributing the weights
+  other than as part of your product.
+
+Conditions apply, including attribution and shipping a copy of the license with your product's third-party notices.
 
 The license text governs; this summary does not. The test fixtures in `tests/goldens/` include copies of the two built-in
 voices; `tests/goldens/NOTICE.md` states their license and the permission to redistribute them with the repository.
