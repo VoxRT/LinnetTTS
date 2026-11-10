@@ -170,11 +170,13 @@ First audio = the prime pass plus one step. With the whole prefix in every prime
 voice (0.2: every binding's `loadVoice` / `load_voice` does it, C `linnet_voice_prepare`) the prime pass runs only the text
 rows, and a re-primed session keeps the voice too. Same 44-character sentence: one Core i9 core, prime 14 ms instead of 67 ms,
 first audio 22 ms instead of 75 ms; Apple M5, one core, prime 7 ms (first audio about 10 ms, measured prime plus the
-3.3 ms step); iPhone 13 Pro Max sample app, one thread, prime 29 ms and first chunk 38 ms instead of 79 / 85 ms; Android
+3.3 ms step); iPhone 13 Pro Max sample app, one thread, prime 29 ms and first chunk 38 ms instead of 79 / 85 ms; iPhone 11,
+first chunk 38–45 ms instead of 107–116 ms; Android
 sample app on the Snapdragon 662, four threads, prime 73–77 ms and first chunk 89–92 ms warm (first utterance after
 launch: prime 96 ms, first chunk 153 ms) instead of about 250 ms. From there to the first sample at the speaker the
-platforms add their own output latency: about 110 ms on the iPhone and 65–110 ms on the Snapdragon 662 with the audio
-route already open, more when the first chunk has to open it (the binding READMEs, "Playback timing"). Peak memory is
+platforms add their own output latency: about 105–110 ms on the iPhones and 65–110 ms on the Snapdragon 662 with the audio
+route already open, more when the first chunk has to open it; from a cold process launch with the files in the OS cache,
+tap to first sound is about 0.4–0.5 s on the iPhone 11 (the binding READMEs, "Playback timing"). Peak memory is
 about 160 MB on Linux. Details, the in-app numbers and the effect of playback pacing: `docs/model-card.md`
 ("Performance") and `bindings/README.md` ("Threads", "Playback and step time").
 

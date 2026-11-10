@@ -214,7 +214,14 @@ first sample at the speaker 182–183 ms (190–193 ms by subtraction), first bu
 first utterance after launch: 112 / 212 / 267 ms); engine prewarmed — prime 29–32 ms, first chunk 39–42 ms, scheduled
 at once, first sample 148 ms by both methods, fully played back 197–202 ms. The 105–110 ms between scheduling and the
 sound is the audio engine's and the device's output latency, not a buffer of the player: playback starts on the first
-buffer.
+buffer. iPhone 11 (A13), same protocol (Low Power Mode off; with it on every compute figure doubles): engine started by
+the first chunk — first chunk 41–45 ms, scheduled at 79–84 ms, first sample 176–182 ms, fully played back 230–241 ms
+(first utterance after a process launch: 28 / 130 / 227 / 288 ms); engine prewarmed — first chunk 38–40 ms, first sample
+145–147 ms, fully played back 192–200 ms. Without the audio engine (`-noaudio`) the A13 primes the same sentence in
+16–17 ms and returns the first chunk at 23–27 ms; with the engine running, the 2.5 s of idle playback between utterances
+lets the core clock down, and the next prime takes about 30 ms. A process launch with the files in the OS cache loads the
+model in 135–223 ms (weights 53–143 ms, voice 80–82 ms), so tap-to-first-sound from a cold process is about 0.4–0.5 s on
+the A13.
 
 Baseline device (iPhone 11, A13, iOS 26, sample app, 80-step sentence): threads 1 — prime 97–106 ms, first chunk
 107–116 ms, mean step 7.1 ms (worst 9.6) without pacing (re-measured on 0.1.0: prime 99–113 ms, first chunk 109–122 ms, mean
