@@ -107,7 +107,9 @@ class MainActivity : AppCompatActivity() {
         val tWeights = SystemClock.elapsedRealtime() - t0
         val v = m.loadVoice(voiceFile) // also prepares the voice: the prime pass then runs only the text
         val tVoice = SystemClock.elapsedRealtime() - t0 - tWeights
-        post("model loaded in ${tWeights + tVoice} ms (weights $tWeights ms, voice $tVoice ms)")
+        val loaded = "model loaded in ${tWeights + tVoice} ms (weights $tWeights ms, voice $tVoice ms)"
+        Log.i(TAG, loaded)
+        post(loaded)
         model = m
         voice = v
         return m to v

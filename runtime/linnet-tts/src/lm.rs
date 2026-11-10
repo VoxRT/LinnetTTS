@@ -477,7 +477,13 @@ impl FlowLm {
                             *s *= scale;
                         }
                         // Causal: row r attends to keys 0..=n0+r; the rest is zeroed
-                        // so the value product sees no mask.
+                        // so the value product sees no mask. The zeros must stay
+                        // inert: `matmul_mm` accumulates over the keys in order from
+                        // zero, so trailing `0 · v` terms leave every sum unchanged
+                        // (`x + (±0.0) == x`), and the rows of a voice prefix come out
+                        // identical whether they are run alone (`Linnet::voice_state`)
+                        // or with the text behind them. A kernel that started from the
+                        // first term or masked with a non-zero value would break that.
                         let valid = n0 + r + 1;
                         ops::softmax_row_inplace(&mut row[..valid], 1, valid);
                         row[valid..].fill(0.0);

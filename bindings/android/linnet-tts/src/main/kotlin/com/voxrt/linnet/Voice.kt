@@ -3,10 +3,12 @@ package com.voxrt.linnet
 import java.io.File
 
 /**
- * Voice prompt latents, a `[frames, dim]` float32 matrix (dim = 48 for linnet-en-35m).
+ * Voice prompt latents, a `[frames, dim]` float32 matrix (dim = 48 for linnet-en-35m), plus, once
+ * [LinnetModel.prepare] (or [LinnetModel.loadVoice]) ran, the prepared state of the voice for that model.
  *
- * Immutable and thread-safe once created. A session copies the latents at creation, so a
- * voice may be closed as soon as the sessions that need it exist. Closing twice is a no-op.
+ * Thread-safe: the latents never change, `prepare` replaces the state under a lock and sessions copy
+ * what they need at creation, so a voice may be shared by any number of threads and sessions and
+ * closed as soon as the sessions that need it exist. Closing twice is a no-op.
  */
 class Voice private constructor(handle: Long) : AutoCloseable {
     @Volatile

@@ -128,7 +128,8 @@ impl PyModel {
     /// Run `voice` through the model once and keep the result in the voice,
     /// so that sessions created from it for this model skip the voice part
     /// of the prime pass (the first chunk then costs the text rows plus one
-    /// step). The audio is identical. Tied to this model instance; about
+    /// step). The audio is identical. Tied to this model instance (a voice
+    /// holds one state: preparing it for another model replaces it); about
     /// 2 MB per voice.
     fn prepare_voice(&self, py: Python<'_>, voice: &PyVoice) -> PyResult<()> {
         let model = Arc::clone(&self.inner);

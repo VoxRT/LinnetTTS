@@ -34,7 +34,7 @@ for chunk in session:                                     # 80 ms per LM step
 
 `Voice.from_array(np.ndarray)` wraps in-memory `[T, 48]` latents and `Voice.load(path)` reads a file without a model; call
 `model.prepare_voice(voice)` on those so that sessions skip the voice part of the prime pass (`load_voice` does it for
-you; `model.is_prepared(voice)` tells). With a prepared voice a short sentence primes in 14 ms instead of 67 ms on one
+you, and therefore runs the model once; `model.is_prepared(voice)` reports whether it was done). With a prepared voice a short sentence primes in 14 ms instead of 67 ms on one
 desktop core; a re-primed session keeps the voice too. The chunk sizes follow the streaming contract
 (`docs/streaming-contract.md` in the repository): the first chunk is `samples_per_step - output_delay` samples, later ones
 `samples_per_step` (1920), the last one `output_delay` (720) zeros, and the concatenation of all chunks is

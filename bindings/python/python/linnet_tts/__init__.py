@@ -43,7 +43,8 @@ def _threads(threads: int) -> int:
     return t
 
 class Voice:
-    """Voice prompt latents: a ``[frames, dim]`` float32 matrix."""
+    """Voice prompt latents, a ``[frames, dim]`` float32 matrix, plus the prepared state for one model
+    once ``Model.prepare_voice`` (or ``Model.load_voice``) ran. Shareable between threads and sessions."""
 
     __slots__ = ("_v",)
 
@@ -192,8 +193,11 @@ class Model:
         Sessions created from it for this model (``session``, ``synthesize``) then
         skip the voice part of the prime pass: the first chunk costs the text rows
         plus one step instead of the whole prefix. The audio is identical. The
-        state is tied to this model instance (about 2 MB per voice); ``load_voice``
-        does this for you, ``Voice.load`` and ``Voice.from_array`` do not.
+        state is tied to this model instance (about 2 MB per voice): a voice holds
+        one state, so preparing it for another model replaces the state and the
+        first model falls back to the latents. ``load_voice`` does this for you
+        (and therefore runs the model), ``Voice.load`` and ``Voice.from_array``
+        do not.
         """
         self._m.prepare_voice(voice._v)
         return voice

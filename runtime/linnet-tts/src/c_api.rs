@@ -5,9 +5,11 @@
 //! Ownership: every `*_load` / `*_new` returns a handle that the matching
 //! `*_free` releases; the library never hands out memory the caller must
 //! free. A session keeps a pointer to the model it was created from; the
-//! model must outlive the session. Handles are not thread-safe
-//! individually; distinct handles may be used from different threads, and
-//! one model may serve any number of sessions concurrently.
+//! model must outlive the session. A session handle is single-threaded;
+//! distinct handles may be used from different threads, one model may
+//! serve any number of sessions concurrently, and a voice may be prepared
+//! (`linnet_voice_prepare`, which replaces its state under a lock) while
+//! other threads create sessions from it.
 //!
 //! Panics never cross the boundary: each fallible entry point catches
 //! them and returns `LINNET_ERR_INTERNAL`. The message of the most recent error on

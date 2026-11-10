@@ -411,7 +411,11 @@ impl<'m> Session<'m> {
     }
 
     /// Tokenize `text` and run the prefix through the trunk. Resets any
-    /// previous utterance (the KV caches must fit the new prefix).
+    /// previous utterance; the voice part of the prefix is kept
+    /// ([`Session::voice_kept`]), so only the text rows run, and the KV
+    /// caches grow when the new text needs more room. On an error the
+    /// session is not primed (`step` returns `None`) until a later prime
+    /// succeeds.
     pub fn prime(&mut self, text: &str) -> Result<()> {
         if text.trim().is_empty() {
             return Err(Error::Invalid("empty input: the text is blank".into()));
@@ -426,13 +430,26 @@ impl<'m> Session<'m> {
             return Err(Error::Invalid("empty input: the text produced no tokens".into()));
         }
         let _big = crate::pool::affinity::BigCoreGuard::enter();
+        self.primed = false; // until the new prefix is in place: a failure below must not leave the old one steppable
         let lm = &self.model.lm;
         let d = self.model.cfg.lm.d_model;
         let tv = self.nv - 1;
         let prefix_len = lm.prefix_len(tokens.len(), tv);
         let cap = prefix_len + self.params.max_frames + 2;
+        // Drop the previous utterance first (only the voice positions, and
+        // the unconditional prefix, survive), then make room for the new one.
+        if self.voice_kept {
+            self.states[0].truncate(self.nv);
+            if self.n_streams == 2 {
+                self.states[1].truncate(2);
+            }
+        } else {
+            for st in &mut self.states {
+                st.reset();
+            }
+        }
         for st in &mut self.states {
-            st.grow(cap); // keeps the voice prefix when it is there
+            st.grow(cap); // keeps the positions written so far
         }
         if self.sc.m_capacity_scores() < cap {
             self.sc = lm.new_scratch(self.n_streams, cap);
@@ -455,17 +472,12 @@ impl<'m> Session<'m> {
             let t = tokens.len() + 1;
             rows.resize(t * d, 0.0);
             lm.build_text_rows(tokens, &mut rows)?;
-            self.states[0].truncate(self.nv);
             lm.prefill(&mut rows, t, &mut self.states[0], &mut self.sc, &pool)?;
             lm.out_norm(&rows[(t - 1) * d..], &mut self.z_rows[..d]);
             if self.n_streams == 2 {
-                self.states[1].truncate(2);
                 self.z_rows[d..].copy_from_slice(&self.z_null);
             }
         } else {
-            for st in &mut self.states {
-                st.reset();
-            }
             rows.resize(prefix_len * d, 0.0);
             lm.build_prefix(tokens, &self.voice, &mut rows)?;
             lm.prefill(&mut rows, prefix_len, &mut self.states[0], &mut self.sc, &pool)?;

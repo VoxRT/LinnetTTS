@@ -14,9 +14,14 @@ Code releases are tagged `vX.Y.Z`; model weights are released separately as `wei
   (+ `Linnet::synthesize_with_state`, `Session::collect`, `Session::voice_kept`), C `linnet_voice_prepare` /
   `linnet_voice_is_prepared`, Python `Model.prepare_voice` / `is_prepared`, Kotlin `LinnetModel.prepare` / `isPrepared`,
   Swift `LinnetModel.prepare(voice:)` / `isPrepared(voice:)`; `load_voice` / `loadVoice` / `voiceFromNpy` prepare the
-  voice they return. The audio is bit-identical to 0.1.x (`kept_voice_prefix_is_bit_exact` in `tests/golden.rs`). One
-  Core i9 core, 44-character sentence: prime 14 ms instead of 67 ms, first audio 22 ms instead of 75 ms; preparation
-  66 ms once per voice, about 2 MB per voice in memory.
+  voice they return. New public types and methods in Rust: `VoiceState` (`frames`, `dim`, `prefix_len`, `is_for`),
+  `FlowLm::build_voice_rows` / `build_text_rows`, `TrunkState::truncate` / `grow`. The audio is bit-identical to a full
+  prime pass, hence to 0.1.x (the golden vectors are unchanged; `kept_voice_prefix_is_bit_exact` in
+  `runtime/linnet-tts/tests/golden.rs` checks fp16 and fp32, with and without guidance, one and four threads). One Core
+  i9 core, 44-character sentence: prime 14 ms instead of 67 ms, first audio 22 ms instead of 75 ms; preparation 66 ms
+  once per voice, about 2 MB per voice in memory. Behaviour change for existing users: `load_voice` / `loadVoice` /
+  `voiceFromNpy` now run one prime pass over the voice (tens of milliseconds, off the main thread like the model load)
+  and can fail for that reason; `Voice.load` plus an explicit `prepare` keeps the old split.
 - `stream.c` prepares the voice and prints the preparation time; the sample apps log the weights and voice load times
   separately.
 - `WEIGHTS_PERMISSIONS.md`: written permissions under Section 15.2 of the weights license, starting with one that lets a
@@ -37,8 +42,8 @@ Code releases are tagged `vX.Y.Z`; model weights are released separately as `wei
   chunk fully played), and `prewarm()` opens the output route before the first chunk; the sample apps take
   `prewarm` (Android: intent extras `autospeak`, `prewarm`, `repeat`; iOS: `-prewarm`) and log the figures.
 - Python extension built on pyo3 0.30 (was 0.22.6, the version of three Dependabot advisories that the extension did not
-  exercise; issue #2). Same API, same `abi3-py39` wheel; the extension releases the GIL during `load`, `prime`, `step`,
-  `synthesize` and `prepare_voice` as before.
+  exercise; issue #2). Same API, same `abi3-py39` wheel; the extension releases the GIL around `load`, `load_voice`,
+  `prepare_voice`, `prime`, `step`, `synthesize` and `decode`, as 0.1 did for the calls that existed.
 
 ## [0.1.1] - 2026-11-04
 
@@ -99,5 +104,6 @@ codec with a Vocos-style decoder, ~41M parameters, 24 kHz, streaming).
 - Browser (WASM) and Node channels are deferred to a later release; the runtime keeps compiling for `wasm32-unknown-unknown`.
 - An int8 (W8A8) weight variant for weaker devices is planned as a separate weights file.
 
+[Unreleased]: https://github.com/VoxRT/LinnetTTS/compare/v0.1.1...HEAD
 [0.1.1]: https://github.com/VoxRT/LinnetTTS/releases/tag/v0.1.1
 [0.1.0]: https://github.com/VoxRT/LinnetTTS/releases/tag/v0.1.0

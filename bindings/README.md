@@ -39,9 +39,8 @@ session, runs only the text rows of the prime pass. The audio is bit-identical e
 prime pass over the voice (66 ms on one Core i9 core, roughly 60-100 ms on a phone) and keeps about 2 MB per voice in
 memory; it is tied to the model instance that computed it (another model uses the voice unprepared). The runtime never
 writes the state to disk; a product that wants to store its own copy may do so under the written permission in
-`WEIGHTS_PERMISSIONS.md`. On one i9 core a
-44-character sentence then primes in 14 ms instead of 67 ms (99 characters: 21 instead of 79; 321 characters: 77 instead
-of 139), and the first chunk follows about 8 ms later.
+`WEIGHTS_PERMISSIONS.md`. On one i9 core a 44-character sentence then primes in 14 ms instead of 67 ms (99 characters:
+21 instead of 79; 321 characters: 77 instead of 139), and the first chunk follows about 8 ms later.
 
 On Android the runtime also pins its threads to the big cluster: the pool workers for good, and the thread that calls
 `prime`, `step` or `decode` only for the duration of that call (its previous affinity mask is restored afterwards).

@@ -50,8 +50,8 @@ sample for sample the result of `synthesize` with the same parameters and seed (
 session keeps strong references to its model and voice, so the C API's "free sessions before the model" rule
 is enforced by ARC; drop references in any order.
 
-**Threads.** `LinnetModel` and `Voice` are immutable (apart from `threads`) and may be shared across threads and
-sessions. A `LinnetSession` is single-threaded: drive it from one queue at a time; different sessions of the
+**Threads.** `LinnetModel` and `Voice` may be shared across threads and sessions: the model is immutable apart
+from `threads`, and a voice changes only through `prepare(voice:)`, which replaces its state under a lock. A `LinnetSession` is single-threaded: drive it from one queue at a time; different sessions of the
 same model may run concurrently. `threads` selects the worker count of the model's persistent pool (1 =
 single-threaded, 0 = automatic, which is one thread on Apple platforms because it is tuned for the phones, where a second core does not pay off); `SynthParams.threads` applies it when a
 session is created. The audio is bit-identical for every thread count. Change it between utterances, not while

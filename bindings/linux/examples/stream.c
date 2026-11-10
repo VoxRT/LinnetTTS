@@ -73,9 +73,9 @@ int main(int argc, char **argv) {
   wav_close(f, (uint32_t)total);
 
   double secs = (double)total / rate;
-  printf("linnet-tts %s: voice prepared in %.1f ms (once); prime %.1f ms, first audio %.1f ms, %zu steps, "
+  printf("linnet-tts %s: voice prepared in %.1f ms (once per voice, %d threads); prime %.1f ms, first audio %.1f ms, %zu steps, "
          "%.3f s audio in %.0f ms (RTF %.1f %%, worst step %.1f ms of %.0f ms budget) -> %s\n",
-         linnet_version(), prepare_ms, prime_ms, first_audio_ms, total / per_step, secs, total_ms,
+         linnet_version(), prepare_ms, linnet_threads(model), prime_ms, first_audio_ms, total / per_step, secs, total_ms,
          100.0 * total_ms / 1e3 / secs, max_step_ms, 1e3 * per_step / rate, argv[5]);
 
   free(chunk);

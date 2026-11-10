@@ -3,9 +3,10 @@
  * Every fallible function returns a status (LINNET_OK = 0, negative on error).
  * Handles come from *_load / *_new and go back through *_free; the
  * library never returns memory the caller has to free. A session keeps a
- * pointer to its model: free sessions before the model. Handles are not
- * thread-safe individually; one model may serve many sessions on
- * different threads.
+ * pointer to its model: free sessions before the model. A session handle is
+ * single-threaded; a model may serve many sessions on different threads, and
+ * a voice may be prepared and used for session creation from any threads
+ * (linnet_voice_prepare replaces its state under a lock).
  */
 #ifndef LINNET_TTS_H
 #define LINNET_TTS_H
@@ -58,8 +59,8 @@ int linnet_set_threads(linnet_model *model, int threads);
 int linnet_threads(const linnet_model *model);
 
 /* Voice: [T, 48] float32 latents, .npy file or in-memory buffer. The width is
- * validated against the model by linnet_session_new / linnet_synthesize
- * (LINNET_ERR_INVALID_ARG), not here. */
+ * validated against the model by linnet_voice_prepare, linnet_session_new and
+ * linnet_synthesize (LINNET_ERR_INVALID_ARG), not here. */
 int linnet_voice_load(const char *path, linnet_voice **out_voice);
 int linnet_voice_from_latents(const float *latents, size_t frames, size_t dim, linnet_voice **out_voice);
 void linnet_voice_free(linnet_voice *voice);

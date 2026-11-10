@@ -70,13 +70,13 @@ public final class LinnetModel: @unchecked Sendable {
     /// Run `voice` through the model once and keep the result in the voice, so that sessions
     /// created from it for this model (``session(voice:params:)``, ``synthesize(text:voice:params:)``)
     /// skip the voice part of the prime pass: the first chunk then costs the text rows plus one
-    /// step instead of the whole prefix. The audio is identical. Costs about one prime pass
-    /// (roughly 60-100 ms on a phone), keeps about 2 MB per voice, and is tied to this model
-    /// instance; ``loadVoice(path:)`` calls it for you, ``Voice/init(latents:frames:dim:)`` and
-    /// ``Voice/load(path:)`` do not.
+    /// step instead of the whole prefix. The audio is identical. Costs about one prime pass over
+    /// the voice, keeps about 2 MB per voice, and is tied to this model instance: a voice holds one
+    /// state, so preparing it for another model replaces the state and the first model falls back
+    /// to the latents. ``loadVoice(path:)`` calls it for you (and therefore runs the model),
+    /// ``Voice/init(latents:frames:dim:)`` and ``Voice/load(path:)`` do not.
     public func prepare(voice: Voice) throws {
         try check(linnet_voice_prepare(handle, voice.handle))
-        withExtendedLifetime(voice) {}
     }
 
     /// True when `voice` was prepared for this model.

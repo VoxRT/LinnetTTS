@@ -171,7 +171,8 @@ final class LinnetTTSTests: XCTestCase {
         XCTAssertTrue(model.isPrepared(voice: raw))
         XCTAssertEqual(try model.synthesize(text: text, voice: raw, params: params), plain, "prepared later")
         let other = try LinnetModel(weightsPath: Self.assets!.weights, tokenizerPath: Self.assets!.tokenizer)
-        XCTAssertFalse(model.isPrepared(voice: voice) && other.isPrepared(voice: voice), "a state belongs to one model")
+        XCTAssertFalse(other.isPrepared(voice: voice), "a state belongs to the model that computed it")
+        XCTAssertTrue(model.isPrepared(voice: voice), "loading another model does not touch it")
         XCTAssertEqual(try other.synthesize(text: text, voice: voice, params: params), plain, "another model falls back")
     }
 

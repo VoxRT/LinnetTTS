@@ -43,7 +43,8 @@ the text rows plus one step. `Voice.load` / `Voice.fromNpy` / `Voice.fromLatents
 `model.prepare(voice)` on those. About 60-100 ms once per voice on a phone, 2 MB per voice; the audio is identical. A
 re-primed session keeps the voice as well. See `bindings/README.md`, "Prepared voices".
 
-**Threads.** `LinnetModel` and `Voice` are immutable: share them freely across threads and sessions. A
+**Threads.** `LinnetModel` and `Voice` may be shared freely across threads and sessions: the model is
+immutable, and a voice changes only through `prepare`, which replaces its state under a lock. A
 `LinnetSession` is single-threaded (drive it from one thread at a time; different sessions may run in parallel).
 Nothing may be closed while another thread is still using it, but a session keeps the weights alive on its
 own, so closing the model before its sessions is safe. Loading (a few hundred ms) and synthesis belong off the

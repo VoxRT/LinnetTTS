@@ -21,6 +21,7 @@ examples/               synth.c (offline), stream.c (streaming), Makefile
 linnet_model *model; linnet_voice *voice;
 linnet_model_load("linnet-en-35m.fp16.safetensors", "tokenizer.model", &model);
 linnet_voice_load("voice.npy", &voice);
+linnet_voice_prepare(model, voice);   /* once per voice: sessions then skip the voice part of the prime pass */
 
 size_t cap = 300 * linnet_samples_per_step(model), n;
 float *pcm = malloc(cap * sizeof(float));
@@ -31,7 +32,7 @@ linnet_model_free(model);
 ```
 
 Streaming: `linnet_session_new` → `linnet_session_prime(text)` → `linnet_session_step` until it writes 0
-samples. Each step is 80 ms of audio (1920 samples); the first chunk is 720 samples shorter and the last is
+samples; a prepared voice makes the prime pass cost only the text rows, and a re-primed session keeps the voice too. Each step is 80 ms of audio (1920 samples); the first chunk is 720 samples shorter and the last is
 720 zeros (an utterance that ends on its first step yields no chunk), so the chunks concatenate to exactly what
 `linnet_synthesize` returns. Every fallible function returns `LINNET_OK` (0) or a negative `LINNET_ERR_*` code;
 `linnet_last_error()` has the message.
