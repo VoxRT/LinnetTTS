@@ -205,7 +205,8 @@ Model weights are not in this repository and are not bundled in any package. Dow
 
 The runtime needs three files: the fp16 weights, `tokenizer.model` and one voice `.npy`. Check `SHA256SUMS` after
 downloading. The weights are licensed under the Linnet Weights License (`WEIGHTS_LICENSE.md`), not under Apache-2.0.
-Products that ship or use them show the notices in Section 8 of that license.
+Products that ship or use them show the notices in Section 8 of that license. Written permissions given under its
+Section 15.2 (at present: storing a prepared voice state inside a product) are collected in `WEIGHTS_PERMISSIONS.md`.
 The weight container is documented in `docs/weights-format.md`.
 
 ## Versioning

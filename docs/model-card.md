@@ -134,6 +134,8 @@ peak-normalised to −3 dBFS and encoded into the voice latent that ships here; 
 | `linnet-en-m1` | `voices/linnet-en-m1.npy` (76 × 48) | a deep, intense male voice with an American accent, documentary narrator, calm and authoritative |
 
 The voices may be used as product voices under `WEIGHTS_LICENSE.md`. Because they are synthetic, no voice-performer credit applies.
+A product may keep a prepared voice state of them (the voice prefix run through the weights, kept in memory by the runtime) on
+its own storage under the written permission in `WEIGHTS_PERMISSIONS.md`.
 
 ## Intended use and limitations
 

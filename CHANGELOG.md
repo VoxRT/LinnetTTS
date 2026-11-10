@@ -19,6 +19,8 @@ Code releases are tagged `vX.Y.Z`; model weights are released separately as `wei
   66 ms once per voice, about 2 MB per voice in memory.
 - `stream.c` prepares the voice and prints the preparation time; the sample apps log the weights and voice load times
   separately.
+- `WEIGHTS_PERMISSIONS.md`: written permissions under Section 15.2 of the weights license, starting with one that lets a
+  product store a prepared voice state on its own device or server.
 
 ## [0.1.1] - 2026-11-04
 
