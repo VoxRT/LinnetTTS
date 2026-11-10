@@ -22,8 +22,20 @@ Code releases are tagged `vX.Y.Z`; model weights are released separately as `wei
 - `WEIGHTS_PERMISSIONS.md`: written permissions under Section 15.2 of the weights license, starting with one that lets a
   product store a prepared voice state on its own device or server.
 
+### Fixed
+
+- Android `AudioTrackPlayer` played nothing on a Snapdragon 662 (Redmi 9T) and most likely on other Qualcomm devices:
+  its 8 s track buffer made the audio policy route the track to a "direct PCM" output that waits for the whole buffer
+  to fill, so a short utterance never started and `drain()` returned after its 150 ms no-progress timeout (the 0.1.1
+  `drain()` change was a symptom of this). The track is now about 160 ms, asks for the low-latency performance mode
+  and runs on the mixer's fast path; the 8 s queue lives in the player and is fed by a thread, so `write()` still
+  returns without pacing the synthesis.
+
 ### Changed
 
+- `AudioTrackPlayer.timing` / `LinnetPlayer.timing` report when the first chunk reached the output (onset, first
+  chunk fully played), and `prewarm()` opens the output route before the first chunk; the sample apps take
+  `prewarm` (Android: intent extras `autospeak`, `prewarm`, `repeat`; iOS: `-prewarm`) and log the figures.
 - Python extension built on pyo3 0.30 (was 0.22.6, the version of three Dependabot advisories that the extension did not
   exercise; issue #2). Same API, same `abi3-py39` wheel; the extension releases the GIL during `load`, `prime`, `step`,
   `synthesize` and `prepare_voice` as before.
