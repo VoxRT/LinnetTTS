@@ -98,7 +98,9 @@ Please cite the Emilia papers (arXiv 2407.05361, 2501.15907) when citing the dat
 One step produces 80 ms of audio (one LM step plus two decoder frames). Output is bit-identical for any thread count on a given
 platform; across CPU architectures and C libraries the samples differ below 2e-3 absolute (SNR above 60 dB). Real-time
 factor = mean step time / 80 ms; "first audio" is the prime pass plus the first step, measured in a command-line or test harness
-unless stated.
+unless stated, with the voice part of the prefix recomputed in every prime pass (the 0.1.x behaviour). Since 0.2.0 a prepared
+voice leaves only the text rows in the prime pass: on one Core i9 core a 44-character sentence primes in 14 ms instead of 67 ms
+and the first audio follows at 22 ms instead of 75 ms (`bindings/README.md`, "Prepared voices").
 
 | device | threads | per step | first audio after text | real-time factor |
 |---|---|---|---|---|

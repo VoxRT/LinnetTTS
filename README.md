@@ -83,7 +83,9 @@ flow LM 31.5 M including the 3.1 M text table, decoder 9.9 M; 38.4 M outside the
    ```
 
    Streaming: `session = model.session(voice, seed=0)`, `session.prime(text)`, then iterate `for chunk in session`
-   (1920 samples = 80 ms per step; the first chunk is 720 samples shorter, the last one is 720 zeros). See `bindings/python/README.md`.
+   (1920 samples = 80 ms per step; the first chunk is 720 samples shorter, the last one is 720 zeros). `load_voice` prepares the
+   voice for the model, so a prime pass runs only the text rows (one desktop core: 14 ms instead of 67 ms for a short
+   sentence); a re-primed session keeps the voice too. See `bindings/python/README.md`.
 
 4. **PyTorch reference** (`python/`, fp32, bit-exact against the training-side vectors, not optimised for speed):
    `pip install ./python`.
@@ -164,7 +166,10 @@ only by x86-64 builds; use it as a check there.
 
 Real-time factor = mean step time / 80 ms (the sentence-level figures in the binding READMEs also include the prime pass).
 First audio arrives 50–130 ms after the text on the phones and about 250 ms in the Android sample app on the Snapdragon 662
-(the prime pass plus one step). Peak memory is about 160 MB on Linux. Details, the in-app numbers and the effect of playback pacing: `docs/model-card.md`
+(the prime pass plus one step, with the voice part of the prefix recomputed each time, as 0.1.x did). With a prepared voice
+(every binding's `loadVoice` / `load_voice` does it; C `linnet_voice_prepare`) the prime pass runs only the text rows: on one
+Core i9 core a 44-character sentence primes in 14 ms instead of 67 ms, first audio 22 ms instead of 75 ms; a re-primed session
+keeps the voice too. Peak memory is about 160 MB on Linux. Details, the in-app numbers and the effect of playback pacing: `docs/model-card.md`
 ("Performance") and `bindings/README.md` ("Threads", "Playback and step time").
 
 ### Compared with other CPU TTS models

@@ -4,6 +4,22 @@ All notable changes to this project are documented in this file. The format foll
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/).
 Code releases are tagged `vX.Y.Z`; model weights are released separately as `weights-vN` (see `README.md`, "Weights").
 
+## [Unreleased]
+
+### Added
+
+- Cached voice state: the trunk state of the voice prefix is computed once per voice and model and reused, so a prime
+  pass runs only the text rows. A session keeps the voice from its first prime on (re-priming is cheaper), and a
+  *prepared voice* gives new sessions the same head start: Rust `Linnet::voice_state` + `Session::with_voice_state`
+  (+ `Linnet::synthesize_with_state`, `Session::collect`, `Session::voice_kept`), C `linnet_voice_prepare` /
+  `linnet_voice_is_prepared`, Python `Model.prepare_voice` / `is_prepared`, Kotlin `LinnetModel.prepare` / `isPrepared`,
+  Swift `LinnetModel.prepare(voice:)` / `isPrepared(voice:)`; `load_voice` / `loadVoice` / `voiceFromNpy` prepare the
+  voice they return. The audio is bit-identical to 0.1.x (`kept_voice_prefix_is_bit_exact` in `tests/golden.rs`). One
+  Core i9 core, 44-character sentence: prime 14 ms instead of 67 ms, first audio 22 ms instead of 75 ms; preparation
+  66 ms once per voice, about 2 MB per voice in memory.
+- `stream.c` prepares the voice and prints the preparation time; the sample apps log the weights and voice load times
+  separately.
+
 ## [0.1.1] - 2026-11-04
 
 ### Fixed

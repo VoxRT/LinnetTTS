@@ -27,7 +27,7 @@ model.session(voice, SynthParams(seed = 0)).use { session ->      // streaming, 
 |---|---|
 | `LinnetModel(weightsPath, tokenizerPath)`, `LinnetModel(File, File)`, `LinnetModel.fromBytes(weights, tokenizer)` | `Model(weights, tokenizer)` |
 | `.sampleRate`, `.samplesPerStep`, `.latentDim`, `.outputDelay`, `.tokenize(text)` | same |
-| `.loadVoice(path)`, `.voiceFromNpy(bytes)`, `Voice.fromLatents(FloatArray, frames, dim = 48)`, `Voice.load(path)`, `Voice.fromNpy(bytes)` | `model.load_voice`, `Voice.from_array`, `Voice.load` |
+| `.loadVoice(path)`, `.voiceFromNpy(bytes)` (both prepare the voice), `.prepare(voice)`, `.isPrepared(voice)`, `Voice.fromLatents(FloatArray, frames, dim = 48)`, `Voice.load(path)`, `Voice.fromNpy(bytes)` | `model.load_voice`, `prepare_voice`, `is_prepared`, `Voice.from_array`, `Voice.load` |
 | `.synthesize(text, voice, SynthParams(temp, cfg, maxFrames, eosThreshold, seed)): FloatArray` | `model.synthesize(...)` |
 | `.session(voice, params): LinnetSession` with `.prime(text)`, `.step(): FloatArray?`, `.stepInto(buf): Int`, `.chunks()`, `.frames`, `.finished`, `.latent()` | `model.session(...)`, `prime`, `step`, iteration, `frames`, `finished`, `latent` |
 | `LinnetException(code, message)` with the C API codes | `IOError` / `ValueError` |
@@ -36,6 +36,12 @@ Every class is `AutoCloseable`; use `use { }` or call `close()` (idempotent). Ch
 `docs/streaming-contract.md`: the first chunk is `samplesPerStep - outputDelay` samples (1200), later ones
 `samplesPerStep` (1920), the last one `outputDelay` (720) zeros, and the concatenation is sample for sample the
 result of `synthesize` with the same parameters and seed.
+
+**Prepared voices.** `loadVoice` and `voiceFromNpy` run the voice through the model once and keep the result in the
+`Voice`, so sessions created from it (and `synthesize`) skip the voice part of the prime pass: the first chunk then costs
+the text rows plus one step. `Voice.load` / `Voice.fromNpy` / `Voice.fromLatents` do not know the model; call
+`model.prepare(voice)` on those. About 60-100 ms once per voice on a phone, 2 MB per voice; the audio is identical. A
+re-primed session keeps the voice as well. See `bindings/README.md`, "Prepared voices".
 
 **Threads.** `LinnetModel` and `Voice` are immutable: share them freely across threads and sessions. A
 `LinnetSession` is single-threaded (drive it from one thread at a time; different sessions may run in parallel).

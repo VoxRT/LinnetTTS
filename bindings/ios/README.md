@@ -26,7 +26,7 @@ player.drain()
 | `LinnetModel(weightsPath:tokenizerPath:)`, `LinnetModel(weightsURL:tokenizerURL:)` | `LinnetModel(weightsPath, tokenizerPath)` | `Model(weights, tokenizer)` |
 | `.sampleRate`, `.samplesPerStep`, `.outputDelay`, `.latentDim`, `LinnetModel.version` | same | same |
 | `.threads` (get/set; 0 = automatic, getter returns the resolved count) | `SynthParams.threads` | `threads=` |
-| `.loadVoice(path:)`, `.loadVoice(url:)`, `Voice.load(path:)`, `Voice(latents:frames:dim:)`, `.frames`, `.dim` | `loadVoice`, `Voice.load`, `Voice.fromLatents` | `load_voice`, `Voice.from_array` |
+| `.loadVoice(path:)`, `.loadVoice(url:)` (both prepare the voice), `.prepare(voice:)`, `.isPrepared(voice:)`, `Voice.load(path:)`, `Voice(latents:frames:dim:)`, `.frames`, `.dim` | `loadVoice`, `prepare`, `isPrepared`, `Voice.load`, `Voice.fromLatents` | `load_voice`, `prepare_voice`, `is_prepared`, `Voice.from_array` |
 | `.synthesize(text:voice:params:) -> [Float]` | `synthesize(text, voice, params)` | `synthesize(...)` |
 | `.session(voice:params:) -> LinnetSession`; `.prime(text:)`, `.step() -> [Float]?`, `.step(into:) -> Int`, `.remaining()`, `.finished`, `.chunksEmitted` | `session`, `prime`, `step`, `stepInto`, `chunks`, `finished` | `session`, `prime`, `step`, iteration, `finished` |
 | `SynthParams(temp:cfg:maxFrames:eosThreshold:seed:threads:)` | `SynthParams(...)` | keywords |
@@ -35,6 +35,12 @@ player.drain()
 
 Not in the C API, hence not here: `tokenize`, `latent()`, `frames`. `outputDelay` (720) and `latentDim` (48) are
 constants of the streaming contract.
+
+**Prepared voices.** `loadVoice` runs the voice through the model once and keeps the result in the `Voice`, so sessions
+created from it (and `synthesize`) skip the voice part of the prime pass: the first chunk then costs the text rows plus
+one step. `Voice.load(path:)` and `Voice(latents:frames:dim:)` do not know the model; call `model.prepare(voice:)` on
+those. About 60-100 ms once per voice on a phone, 2 MB per voice; the audio is identical. A re-primed session keeps the
+voice as well. See `bindings/README.md`, "Prepared voices".
 
 Chunk layout follows `docs/streaming-contract.md`: the first chunk is `samplesPerStep - outputDelay` samples
 (1200), later ones `samplesPerStep` (1920), the last one `outputDelay` (720) zeros, and the concatenation is

@@ -21,7 +21,7 @@ contract: https://github.com/VoxRT/LinnetTTS.
 import linnet_tts, soundfile as sf
 
 model = linnet_tts.Model("linnet-en-35m.fp16.safetensors", "tokenizer.model")
-voice = model.load_voice("voice.npy")                     # [T, 48] float32 .npy
+voice = model.load_voice("voice.npy")                     # [T, 48] float32 .npy; prepared for the model
 
 audio = model.synthesize("Hello there.", voice, temp=0.3, cfg=2.0, seed=0)
 sf.write("hello.wav", audio, model.sample_rate)           # float32, 24 kHz
@@ -32,7 +32,10 @@ for chunk in session:                                     # 80 ms per LM step
     play(chunk)
 ```
 
-`Voice.from_array(np.ndarray)` wraps in-memory `[T, 48]` latents. The chunk sizes follow the streaming contract
+`Voice.from_array(np.ndarray)` wraps in-memory `[T, 48]` latents and `Voice.load(path)` reads a file without a model; call
+`model.prepare_voice(voice)` on those so that sessions skip the voice part of the prime pass (`load_voice` does it for
+you; `model.is_prepared(voice)` tells). With a prepared voice a short sentence primes in 14 ms instead of 67 ms on one
+desktop core; a re-primed session keeps the voice too. The chunk sizes follow the streaming contract
 (`docs/streaming-contract.md` in the repository): the first chunk is `samples_per_step - output_delay` samples, later ones
 `samples_per_step` (1920), the last one `output_delay` (720) zeros, and the concatenation of all chunks is
 sample-for-sample identical to `synthesize` with the same parameters and seed.
