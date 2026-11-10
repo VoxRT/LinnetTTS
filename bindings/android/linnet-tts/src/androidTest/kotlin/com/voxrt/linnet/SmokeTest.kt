@@ -87,6 +87,41 @@ class SmokeTest {
         }
     }
 
+    /** `loadVoice` prepares the voice, `Voice.load` does not; both paths and a re-primed session give the same bytes. */
+    @Test
+    fun preparedVoiceIsBitExact() {
+        assumeAssets()
+        val text = "The meeting starts at nine."
+        val params = SynthParams(seed = 4)
+        LinnetModel(weights, tokenizer).use { model ->
+            model.loadVoice(voiceFile).use { voice ->
+                assertTrue(model.isPrepared(voice))
+                Voice.load(voiceFile).use { raw ->
+                    assertTrue(!model.isPrepared(raw))
+                    val plain = model.synthesize(text, raw, params)
+                    assertArrayEquals(plain, model.synthesize(text, voice, params), 0f)
+                    model.session(voice, params).use { s ->
+                        s.prime("Hello there.")
+                        s.chunks().count()
+                        s.prime(text)
+                        val chunks = s.chunks().toList()
+                        val streamed = FloatArray(chunks.sumOf { it.size })
+                        var off = 0
+                        for (c in chunks) { c.copyInto(streamed, off); off += c.size }
+                        assertArrayEquals(plain, streamed, 0f)
+                    }
+                    model.prepare(raw)
+                    assertTrue(model.isPrepared(raw))
+                    assertArrayEquals(plain, model.synthesize(text, raw, params), 0f)
+                    LinnetModel(weights, tokenizer).use { other ->
+                        assertTrue(!other.isPrepared(voice))
+                        assertArrayEquals(plain, other.synthesize(text, voice, params), 0f)
+                    }
+                }
+            }
+        }
+    }
+
     @Test
     fun sessionOutlivesModelAndErrorsAreTyped() {
         assumeAssets()
