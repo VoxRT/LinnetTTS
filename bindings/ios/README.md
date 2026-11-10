@@ -202,6 +202,20 @@ with the audio engine running and the UI updating. Measure throughput without pa
 real-time margin on slow phones, synthesize in bursts with a large queue (`LinnetPlayer(bufferMillis:)`; the default
 of 8 s, also the sample's default, does this) so the core runs at full clock and then sleeps. `device-pace-experiment.sh` runs these modes on a device.
 
+**Playback timing (0.2).** `LinnetPlayer.timing` records when the first buffer went through the output: when it was
+scheduled, the onset of its first sample at the device (the player node's render clock plus
+`AVAudioSession.outputLatency`, and, as a cross-check, the first `.dataPlayedBack` callback minus the buffer's
+duration) and that callback itself, i.e. when the first buffer had fully played back (Apple accounts for the device
+latency in it; it marks the *end* of the first 50 ms chunk, not the onset). `prewarm()` starts the engine and plays
+50 ms of silence before the first chunk; otherwise the first `write` starts the engine. The sample takes `-prewarm`.
+iPhone 13 Pro Max (A15), 44-character sentence, one thread, prepared voice, six runs each: engine started by the
+first chunk — prime 29 ms, first chunk 38 ms, scheduled at 82–83 ms (`engine.start()` + `play()` take about 45 ms),
+first sample at the speaker 182–183 ms (190–193 ms by subtraction), first buffer fully played back 240–243 ms (the
+first utterance after launch: 112 / 212 / 267 ms); engine prewarmed — prime 29–32 ms, first chunk 39–42 ms, scheduled
+at once, first sample 148 ms by both methods, fully played back 197–202 ms. The 105–110 ms between scheduling and the
+sound is the audio engine's and the device's output latency, not a buffer of the player: playback starts on the first
+buffer.
+
 Baseline device (iPhone 11, A13, iOS 26, sample app, 80-step sentence): threads 1 — prime 97–106 ms, first chunk
 107–116 ms, mean step 7.1 ms (worst 9.6) without pacing (re-measured on 0.1.0: prime 99–113 ms, first chunk 109–122 ms, mean
 step 6.4–7.1 ms, worst up to 11.9 ms); threads 2 — prime 78 ms, first chunk 88 ms, but mean step 14 ms (worst 30 ms): the second

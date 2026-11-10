@@ -24,6 +24,8 @@ Code releases are tagged `vX.Y.Z`; model weights are released separately as `wei
   and can fail for that reason; `Voice.load` plus an explicit `prepare` keeps the old split.
 - `stream.c` prepares the voice and prints the preparation time; the sample apps log the weights and voice load times
   separately.
+- `bindings/ios/device-smoke.sh` passes the sample's arguments after `--` (devicectl took `-autospeak` as its own
+  flag and the launches failed silently) and keeps the continuation lines of the app's log.
 - `WEIGHTS_PERMISSIONS.md`: written permissions under Section 15.2 of the weights license, starting with one that lets a
   product store a prepared voice state on its own device or server.
 

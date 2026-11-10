@@ -63,7 +63,9 @@ if [ "$what" = sample ] || [ "$what" = all ]; then
     --destination "Documents/voice.npy" --domain-type appDataContainer --domain-identifier "$bundle"
   for threads in 1 0; do
     echo "-- autospeak, threads $threads"
-    xcrun devicectl device process launch --device "$LINNET_DEVICE" --console --terminate-existing "$bundle" \
-      -autospeak "$text" -threads "$threads" -repeat 3 2>&1 | grep -E "linnet-sample|error" || true
+    # `--` separates the app's arguments from devicectl's own; the log lines of the app may continue on a
+    # second line without the tag, hence the -A2.
+    xcrun devicectl device process launch --device "$LINNET_DEVICE" --console --terminate-existing "$bundle" -- \
+      -autospeak "$text" -threads "$threads" -repeat 3 2>&1 | grep -i -A2 -E "linnet-sample|error" || true
   done
 fi
