@@ -100,7 +100,8 @@ platform; across CPU architectures and C libraries the samples differ below 2e-3
 factor = mean step time / 80 ms; "first audio" is the prime pass plus the first step, measured in a command-line or test harness
 unless stated, with the voice part of the prefix recomputed in every prime pass (the 0.1.x runtime). Since runtime 0.2.0 a
 prepared voice leaves only the text rows in the prime pass: on one Core i9 core a 44-character sentence primes in 14 ms instead of 67 ms
-and the first audio follows at 22 ms instead of 75 ms (`bindings/README.md`, "Prepared voices").
+and the first audio follows at 22 ms instead of 75 ms; the phone and Mac figures with a prepared voice are in the
+repository README ("Performance") and in `bindings/README.md` ("Prepared voices").
 
 | device | threads | per step | first audio after text | real-time factor |
 |---|---|---|---|---|
@@ -134,8 +135,9 @@ peak-normalised to −3 dBFS and encoded into the voice latent that ships here; 
 | `linnet-en-m1` | `voices/linnet-en-m1.npy` (76 × 48) | a deep, intense male voice with an American accent, documentary narrator, calm and authoritative |
 
 The voices may be used as product voices under `WEIGHTS_LICENSE.md`. Because they are synthetic, no voice-performer credit applies.
-A product may keep a prepared voice state of them (the voice prefix run through the weights, kept in memory by the runtime) on
-its own storage under the written permission in `WEIGHTS_PERMISSIONS.md`.
+A product may keep a prepared voice state of them (the voice prefix run through the weights, kept in memory by the runtime,
+which offers no export; a product may add one) on its own storage under the written permission in `WEIGHTS_PERMISSIONS.md`
+in the repository (https://github.com/VoxRT/LinnetTTS/blob/main/WEIGHTS_PERMISSIONS.md).
 
 ## Intended use and limitations
 
