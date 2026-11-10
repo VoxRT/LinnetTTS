@@ -13,7 +13,7 @@ import Foundation
 import PackageDescription
 
 let version = "0.2.0"
-let checksum = "83990ef6ab979857cc66dd57c903b80c180f533a55007e6cec5907d898caed64"
+let checksum = "e0bd9931b354b702472abb6b26f5f7e776ad04e902e4b6a0420ffb0a70ccbf35"
 
 let binary: Target = ProcessInfo.processInfo.environment["LINNET_LOCAL_XCFRAMEWORK"] != nil
     ? .binaryTarget(name: "CLinnetTTS", path: "bindings/ios/LinnetTTS/LinnetTTS.xcframework")
