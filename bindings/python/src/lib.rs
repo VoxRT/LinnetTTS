@@ -9,9 +9,8 @@
 //! Long-running calls (`load`, `prime`, `step`, `synthesize`) release the
 //! GIL, so one model may serve several sessions from several threads.
 
-// pyo3 0.22's #[pymethods] expansion trips `useless_conversion` on recent clippy; `is_multiple_of` needs Rust 1.87
-// and the crate's MSRV is 1.85.
-#![allow(clippy::useless_conversion, clippy::manual_is_multiple_of)]
+// `is_multiple_of` needs Rust 1.87 and the crate's MSRV is 1.85.
+#![allow(clippy::manual_is_multiple_of)]
 
 use std::sync::{Arc, Mutex};
 
@@ -30,7 +29,7 @@ fn to_py(e: Error) -> PyErr {
 }
 
 fn pcm_bytes<'py>(py: Python<'py>, pcm: &[f32]) -> Bound<'py, PyBytes> {
-    PyBytes::new_bound_with(py, pcm.len() * 4, |buf| {
+    PyBytes::new_with(py, pcm.len() * 4, |buf| {
         for (dst, s) in buf.chunks_exact_mut(4).zip(pcm) {
             dst.copy_from_slice(&s.to_le_bytes());
         }
@@ -64,7 +63,7 @@ impl PyModel {
     #[new]
     fn new(py: Python<'_>, weights_path: &str, tokenizer_path: &str) -> PyResult<Self> {
         let (w, t) = (weights_path.to_owned(), tokenizer_path.to_owned());
-        let model = py.allow_threads(move || Linnet::load(w, t)).map_err(to_py)?;
+        let model = py.detach(move || Linnet::load(w, t)).map_err(to_py)?;
         Ok(PyModel { inner: Arc::new(model) })
     }
 
@@ -113,7 +112,7 @@ impl PyModel {
     /// the voice for this model (`prepare_voice`).
     fn load_voice(&self, py: Python<'_>, path: &str) -> PyResult<PyVoice> {
         let p = path.to_owned();
-        let v = py.allow_threads(move || VoiceLatents::load(p)).map_err(to_py)?;
+        let v = py.detach(move || VoiceLatents::load(p)).map_err(to_py)?;
         if v.dim() != self.inner.latent_dim() {
             return Err(PyValueError::new_err(format!(
                 "voice latents have width {}, the model expects {}",
@@ -134,7 +133,7 @@ impl PyModel {
     fn prepare_voice(&self, py: Python<'_>, voice: &PyVoice) -> PyResult<()> {
         let model = Arc::clone(&self.inner);
         let latents = Arc::clone(&voice.inner);
-        let state = py.allow_threads(move || model.voice_state(&latents)).map_err(to_py)?;
+        let state = py.detach(move || model.voice_state(&latents)).map_err(to_py)?;
         *voice.state.lock().unwrap_or_else(|e| e.into_inner()) = Some(state);
         Ok(())
     }
@@ -163,7 +162,7 @@ impl PyModel {
         let model = Arc::clone(&self.inner);
         let text = text.to_owned();
         let pcm = py
-            .allow_threads(move || {
+            .detach(move || {
                 let mut s = voice.session_for(&model, params)?;
                 s.prime(&text)?;
                 Ok::<_, Error>(s.collect())
@@ -190,7 +189,7 @@ impl PyModel {
             )));
         }
         let model = Arc::clone(&self.inner);
-        let pcm = py.allow_threads(move || model.decode(&lat)).map_err(to_py)?;
+        let pcm = py.detach(move || model.decode(&lat)).map_err(to_py)?;
         Ok(pcm_bytes(py, &pcm))
     }
 
@@ -269,7 +268,7 @@ impl PyVoice {
     #[staticmethod]
     fn load(py: Python<'_>, path: &str) -> PyResult<Self> {
         let p = path.to_owned();
-        let v = py.allow_threads(move || VoiceLatents::load(p)).map_err(to_py)?;
+        let v = py.detach(move || VoiceLatents::load(p)).map_err(to_py)?;
         Ok(PyVoice::wrap(v))
     }
 
@@ -322,19 +321,19 @@ impl PySession {
     /// the voice part of the prefix is kept, so only the text rows run.
     fn prime(&mut self, py: Python<'_>, text: &str) -> PyResult<()> {
         let s = &mut self.session;
-        py.allow_threads(move || s.prime(text)).map_err(to_py)
+        py.detach(move || s.prime(text)).map_err(to_py)
     }
 
     /// Run the prefix from ready-made token ids.
     fn prime_tokens(&mut self, py: Python<'_>, tokens: Vec<u32>) -> PyResult<()> {
         let s = &mut self.session;
-        py.allow_threads(move || s.prime_tokens(&tokens)).map_err(to_py)
+        py.detach(move || s.prime_tokens(&tokens)).map_err(to_py)
     }
 
     /// Next chunk as float32 LE bytes, or `None` once the utterance is over.
     fn step<'py>(&mut self, py: Python<'py>) -> Option<Bound<'py, PyBytes>> {
         let s = &mut self.session;
-        let chunk: Option<Vec<f32>> = py.allow_threads(move || s.step().map(|c| c.to_vec()));
+        let chunk: Option<Vec<f32>> = py.detach(move || s.step().map(|c| c.to_vec()));
         chunk.map(|c| pcm_bytes(py, &c))
     }
 

@@ -22,6 +22,12 @@ Code releases are tagged `vX.Y.Z`; model weights are released separately as `wei
 - `WEIGHTS_PERMISSIONS.md`: written permissions under Section 15.2 of the weights license, starting with one that lets a
   product store a prepared voice state on its own device or server.
 
+### Changed
+
+- Python extension built on pyo3 0.30 (was 0.22.6, the version of three Dependabot advisories that the extension did not
+  exercise; issue #2). Same API, same `abi3-py39` wheel; the extension releases the GIL during `load`, `prime`, `step`,
+  `synthesize` and `prepare_voice` as before.
+
 ## [0.1.1] - 2026-11-04
 
 ### Fixed
