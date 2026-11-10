@@ -44,6 +44,8 @@ internal object LinnetNative {
     external fun voiceFrames(voice: Long): Int
     external fun voiceDim(voice: Long): Int
     external fun voiceLatents(voice: Long): FloatArray
+    external fun voicePrepare(model: Long, voice: Long)
+    external fun voiceIsPrepared(model: Long, voice: Long): Boolean
 
     // Session
     external fun sessionNew(

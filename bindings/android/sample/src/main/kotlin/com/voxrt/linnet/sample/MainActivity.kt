@@ -83,8 +83,10 @@ class MainActivity : AppCompatActivity() {
         post("loading model (runtime ${LinnetModel.version})...")
         val t0 = SystemClock.elapsedRealtime()
         val m = LinnetModel(weightsFile, tokenizerFile)
-        val v = m.loadVoice(voiceFile)
-        post("model loaded in ${SystemClock.elapsedRealtime() - t0} ms")
+        val tWeights = SystemClock.elapsedRealtime() - t0
+        val v = m.loadVoice(voiceFile) // also prepares the voice: the prime pass then runs only the text
+        val tVoice = SystemClock.elapsedRealtime() - t0 - tWeights
+        post("model loaded in ${tWeights + tVoice} ms (weights $tWeights ms, voice $tVoice ms)")
         model = m
         voice = v
         return m to v

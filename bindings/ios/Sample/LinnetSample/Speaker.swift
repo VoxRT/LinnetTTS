@@ -72,12 +72,14 @@ final class Speaker: ObservableObject {
                 let t0 = Date()
                 let m = try LinnetModel(weightsURL: dir.appendingPathComponent(Self.files[0]),
                                         tokenizerURL: dir.appendingPathComponent(Self.files[1]))
+                let weightsMs = Date().timeIntervalSince(t0) * 1000
+                // loadVoice also prepares the voice: the prime pass then runs only the text.
                 let v = try m.loadVoice(url: dir.appendingPathComponent(Self.files[2]))
                 let ms = Date().timeIntervalSince(t0) * 1000
                 model = m
                 voice = v
-                let msg = String(format: "model %@ loaded in %.0f ms (%d Hz, %d samples/step, %d threads)",
-                                 LinnetModel.version, ms, m.sampleRate, m.samplesPerStep, m.threads)
+                let msg = String(format: "model %@ loaded in %.0f ms (weights %.0f ms, voice %.0f ms; %d Hz, %d samples/step, %d threads)",
+                                 LinnetModel.version, ms, weightsMs, ms - weightsMs, m.sampleRate, m.samplesPerStep, m.threads)
                 log(msg)
                 DispatchQueue.main.async { self.ready = true; self.status = msg }
                 if let text = auto {

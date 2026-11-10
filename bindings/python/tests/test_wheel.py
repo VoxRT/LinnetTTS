@@ -111,6 +111,27 @@ def test_session_reprime_resets(model, voice):
     np.testing.assert_array_equal(first, again)
 
 
+def test_prepared_voice_is_bit_exact(model, voice):
+    """A prepared voice (load_voice prepares; Voice.load does not) gives the same bits
+    through synthesize, a session and a re-primed session, and is tied to its model."""
+    assert model.is_prepared(voice)
+    raw = linnet_tts.Voice.load(VOICE)
+    assert not model.is_prepared(raw)
+    text = "The meeting starts at nine."
+    plain = model.synthesize(text, raw, seed=4)
+    np.testing.assert_array_equal(model.synthesize(text, voice, seed=4), plain)
+    session = model.session(voice, seed=4)
+    session.prime("Hello there.")
+    list(session)
+    session.prime(text)
+    np.testing.assert_array_equal(np.concatenate(list(session)), plain)
+    assert model.prepare_voice(raw) is raw and model.is_prepared(raw)
+    np.testing.assert_array_equal(model.synthesize(text, raw, seed=4), plain)
+    other = linnet_tts.Model(WEIGHTS_FP16, TOKENIZER)
+    assert not other.is_prepared(voice)
+    np.testing.assert_array_equal(other.synthesize(text, voice, seed=4), plain)
+
+
 def test_decode_matches_streamed_latents(model, voice):
     session = model.session(voice, seed=2)
     session.prime("Hello there.")
