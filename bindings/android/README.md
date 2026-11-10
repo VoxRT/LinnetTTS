@@ -40,8 +40,8 @@ result of `synthesize` with the same parameters and seed.
 **Prepared voices.** `loadVoice` and `voiceFromNpy` run the voice through the model once and keep the result in the
 `Voice`, so sessions created from it (and `synthesize`) skip the voice part of the prime pass: the first chunk then costs
 the text rows plus one step. `Voice.load` / `Voice.fromNpy` / `Voice.fromLatents` do not know the model; call
-`model.prepare(voice)` on those. About 60-100 ms once per voice on a phone, 2 MB per voice; the audio is identical. A
-re-primed session keeps the voice as well. See `bindings/README.md`, "Prepared voices".
+`model.prepare(voice)` on those. Once per voice, 230–340 ms in the sample app on a Snapdragon 662 right after the model
+load (four threads), 2 MB per voice; the audio is identical. A re-primed session keeps the voice as well. See `bindings/README.md`, "Prepared voices".
 
 **Threads.** `LinnetModel` and `Voice` may be shared freely across threads and sessions: the model is
 immutable, and a voice changes only through `prepare`, which replaces its state under a lock. A
@@ -154,7 +154,21 @@ Sample app on a Snapdragon 662 (Redmi 9T), 7.0 s sentence, `threads` auto (4 big
 process is slower: 17-19 ms per step with a 55-70 ms worst step and 300-430 ms to the first chunk): 15.9-18.4 ms per step (RTF 20-23 %,
 steps over audio duration as the app computes it; the root README tables use step / 80 ms),
 worst step 33-39 ms, first chunk 244-260 ms after the Speak tap; the big-core affinity of the pool (see `bindings/README.md`, "Threads") is
-what brings the app close to the 14.3 ms of the command-line build.
+what brings the app close to the 14.3 ms of the command-line build. Those first-chunk figures are 0.1.x, with the voice part of
+the prefix recomputed in every prime; with a prepared voice (0.2) the same app shows prime 73–77 ms and first chunk 89–92 ms
+warm for a 44-character sentence (96 / 153 ms on the first utterance after launch), and the first sample reaches the speaker
+180–290 ms after the text (the fast mixer's start latency on this device; see "Playback timing" below).
+
+**Playback timing.** `AudioTrackPlayer.timing` records when the first chunk went through the output: the time it was
+handed to the track, the device-side onset and the end of the first chunk from `AudioTrack.getTimestamp`, and the
+mixer-side view from the playback head. `prewarm()` opens the route before the first chunk. Driving the sample with
+`adb shell "am start -n com.voxrt.linnet.sample/.MainActivity --es autospeak '<text>' --ez prewarm true --ei repeat 6"`
+logs both (`adb logcat -s linnet-sample`). Snapdragon 662, 44-character sentence, four threads, six runs: route opened by
+the first chunk — first chunk from the runtime 64–90 ms, handed to the track 118–165 ms (`play()` opens the route),
+first sample at the speaker 219–287 ms, first chunk fully played 269–337 ms; route prewarmed — first chunk 72–116 ms,
+handed over at once, first sample 180–277 ms, fully played 230–327 ms. The 65–110 ms between the hand-over and the sound
+is the fast mixer's start latency plus the output latency of the device, not a buffer of the player: the track holds
+160 ms and starts as soon as the first chunk is in.
 
 ## Tests
 

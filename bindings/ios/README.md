@@ -39,8 +39,8 @@ constants of the streaming contract.
 **Prepared voices.** `loadVoice` runs the voice through the model once and keeps the result in the `Voice`, so sessions
 created from it (and `synthesize`) skip the voice part of the prime pass: the first chunk then costs the text rows plus
 one step. `Voice.load(path:)` and `Voice(latents:frames:dim:)` do not know the model; call `model.prepare(voice:)` on
-those. About 60-100 ms once per voice on a phone, 2 MB per voice; the audio is identical. A re-primed session keeps the
-voice as well. See `bindings/README.md`, "Prepared voices".
+those. Once per voice, about one prime pass over the voice (39 ms on an Apple M5 core), 2 MB per voice; the audio is
+identical. A re-primed session keeps the voice as well. See `bindings/README.md`, "Prepared voices".
 
 Chunk layout follows `docs/streaming-contract.md`: the first chunk is `samplesPerStep - outputDelay` samples
 (1200), later ones `samplesPerStep` (1920), the last one `outputDelay` (720) zeros, and the concatenation is
@@ -183,7 +183,8 @@ threads 4 mean 2.7 ms (two threads pay off on an M5; `auto` still resolves to on
 the same numbers in a Release test host; it does not predict a phone. Device runs: `device-smoke.sh` (needs an
 unlocked login keychain on the Mac for `codesign`).
 
-Device results (measured on 0.0.1, unchanged in 0.1.0; iPhone 13 Pro Max, A15, iOS 27, hosted `LinnetSampleTests`, release): all 6 tests pass; the audio
+Device results (measured on 0.0.1, unchanged in 0.1.0, with the voice part of the prefix recomputed in every prime; since 0.2
+`loadVoice` prepares the voice and the test's prime is text-only, see "Playback timing" below; iPhone 13 Pro Max, A15, iOS 27, hosted `LinnetSampleTests`, release): all 6 tests pass; the audio
 MD5s equal the macOS host and simulator values for every thread count (same NEON kernels, thread-count independent
 result). Timings on the 68-step sentence (5.44 s of audio): threads 1 — prime 79 ms, first chunk 85 ms, mean step
 5.50 ms (worst 6.0), RTF 8.3 %; threads 2 (`auto` resolved to the two performance cores when this was measured; it is

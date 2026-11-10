@@ -24,7 +24,7 @@ speed, latency and footprint.
 
 | model | languages | params | weights on disk | voice cloning | streaming | RTF, 1 thread | RTF, 4 threads | first audio, 1 thread | peak RSS |
 |---|---|---|---|---|---|---|---|---|---|
-| Linnet `linnet-en-35m`, fp16, Rust runtime | English | 41 M | 83 MB | yes | every 80 ms | 10.6 % | 3.4 % | 87 / 133 ms | 187 MB |
+| Linnet `linnet-en-35m`, fp16, Rust runtime (0.1.1: the voice prompt re-read in every prime pass) | English | 41 M | 83 MB | yes | every 80 ms | 10.6 % | 3.4 % | 87 / 133 ms | 187 MB |
 | pocket-tts 4.0.1 (Kyutai), PyTorch | English (7 languages, one model each) | 100 M | 236 MB | yes | every 80 ms | 23.8 % (2 cores) | 24.1 % | 71 / 82 ms | 968 MB |
 | Kokoro-82M v1.0, ONNX fp32 | 8 languages in one model | 81 M | 326 MB + 28 MB voices | no | no | 51.7 % | 17.2 % | 1.5 / 9.6 s | 1246 MB |
 | Piper `en_US-ljspeech-medium`, ONNX | English (one model per voice, many languages) | 16 M | 64 MB | no | per sentence | 5.8 % | 2.1 % | 180 / 283 ms | 503 MB |
@@ -38,9 +38,10 @@ Notes:
 - Kokoro returns the whole utterance from one call (`kokoro-onnx` `create_stream` also returned a single chunk here). A
   caller that splits the text into sentences gets the first audio after the first sentence, roughly the short-text figure.
   The int8 ONNX of Kokoro measured slower than fp32 on this CPU (74 % at 1 thread, 59 % at 4), so the fp32 row is shown.
-- pocket-tts does not get faster with more torch threads (by design, two cores). Its first-audio latency at one thread is a
-  little lower than Linnet's because its voice state is computed once per voice, while Linnet re-reads the voice prompt in
-  the prime pass of every session.
+- pocket-tts does not get faster with more torch threads (by design, two cores). Its first-audio latency at one thread was a
+  little lower than Linnet 0.1.1's because its voice state is computed once per voice, while that Linnet re-read the voice prompt in
+  the prime pass of every session. Since 0.2 `load_voice` prepares the voice once and the prime pass runs only the text
+  rows (one i9 core: 14 ms instead of 67 ms for the short text; the table has not been re-run with the new wheel).
 - Piper medium is the fastest and smallest model in the table; it is a VITS model without voice cloning and without
   streaming inside a sentence.
 - Linnet's step alone takes 7.0–7.4 ms at 1 thread on this CPU (README, "Performance"); the mobile and Raspberry Pi

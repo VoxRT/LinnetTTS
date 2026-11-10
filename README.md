@@ -165,13 +165,13 @@ only by x86-64 builds; use it as a check there.
 | Raspberry Pi Zero 2 W, Cortex-A53 1 GHz | 1 / 4 (auto) | 158 / 59–60 ms | 198 / 75 % |
 
 Real-time factor = mean step time / 80 ms (the sentence-level figures in the binding READMEs also include the prime pass).
-First audio arrives 50–130 ms after the text on the phones and about 250 ms in the Android sample app on the Snapdragon 662
-(the prime pass plus one step, with the voice part of the prefix recomputed each time, as 0.1.x did). With a prepared voice
-(every binding's `loadVoice` / `load_voice` does it; C `linnet_voice_prepare`) the prime pass runs only the text rows: on one
-Core i9 core a 44-character sentence primes in 14 ms instead of 67 ms, first audio 22 ms instead of 75 ms (Apple M5, one
-core: 7 ms and about 10 ms); the Android sample app on the Snapdragon 662 shows prime 73–77 ms and first chunk 89–92 ms for
-the same sentence (96 / 153 ms on the first utterance after launch) instead of about 250 ms; a re-primed session keeps the
-voice too. Peak memory is about 160 MB on Linux. Details, the in-app numbers and the effect of playback pacing: `docs/model-card.md`
+First audio = the prime pass plus one step. With the whole prefix in every prime pass (the 0.1.x runtime) it arrived
+50–130 ms after the text on the phones and about 250 ms in the Android sample app on the Snapdragon 662. With a prepared
+voice (0.2: every binding's `loadVoice` / `load_voice` does it, C `linnet_voice_prepare`) the prime pass runs only the text
+rows, and a re-primed session keeps the voice too. Same 44-character sentence: one Core i9 core, prime 14 ms instead of 67 ms,
+first audio 22 ms instead of 75 ms; Apple M5, one core, prime 7 ms (first audio about 10 ms, measured prime plus the
+3.3 ms step); Android sample app on the Snapdragon 662, four threads, prime 73–77 ms and first chunk 89–92 ms warm (first
+utterance after launch: prime 96 ms, first chunk 153 ms) instead of about 250 ms. Peak memory is about 160 MB on Linux. Details, the in-app numbers and the effect of playback pacing: `docs/model-card.md`
 ("Performance") and `bindings/README.md` ("Threads", "Playback and step time").
 
 ### Compared with other CPU TTS models
@@ -183,7 +183,7 @@ File sizes are decimal megabytes (10^6 bytes), as in the weights table below.
 
 | model | languages | params | weights | cloning | streaming | RTF, 1 thread | RTF, 4 threads | first audio (short / long text) | peak RSS |
 |---|---|---|---|---|---|---|---|---|---|
-| Linnet `linnet-en-35m` (fp16, Rust) | English | 41 M | 83 MB | yes | every 80 ms | 10.6 % | 3.4 % | 87 / 133 ms | 187 MB |
+| Linnet `linnet-en-35m` (fp16, Rust; 0.1.1, voice re-read in every prime, see "Performance" for 0.2) | English | 41 M | 83 MB | yes | every 80 ms | 10.6 % | 3.4 % | 87 / 133 ms | 187 MB |
 | pocket-tts 4.0.1 (PyTorch) | English (7 languages, one model each) | 100 M | 236 MB | yes | every 80 ms | 23.8 % (2 cores) | 24.1 % | 71 / 82 ms | 968 MB |
 | Kokoro-82M (ONNX fp32) | 8 languages in one model | 81 M | 354 MB | no | no | 51.7 % | 17.2 % | 1.5 / 9.6 s | 1246 MB |
 | Piper `en_US-ljspeech-medium` (ONNX) | English (one model per voice, many languages) | 16 M | 64 MB | no | per sentence | 5.8 % | 2.1 % | 180 / 283 ms | 503 MB |

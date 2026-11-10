@@ -36,10 +36,11 @@ depend on the text, so its trunk state is computed once per voice and model and 
 `Model.prepare_voice`, Kotlin `LinnetModel.prepare`, Swift `LinnetModel.prepare(voice:)` for voices built from latents or
 loaded without a model), and every session created from a prepared voice, as well as every re-prime of an existing
 session, runs only the text rows of the prime pass. The audio is bit-identical either way. Preparation costs about one
-prime pass over the voice (66 ms on one Core i9 core, roughly 60-100 ms on a phone) and keeps about 2 MB per voice in
-memory; it is tied to the model instance that computed it (another model uses the voice unprepared). The runtime never
-writes the state to disk; a product that wants to store its own copy may do so under the written permission in
-`WEIGHTS_PERMISSIONS.md`. On one i9 core a 44-character sentence then primes in 14 ms instead of 67 ms (99 characters:
+prime pass over the voice (66 ms on one Core i9 core, 39 ms on an Apple M5 core, 230–340 ms in the Android sample app on
+a Snapdragon 662 right after the model load, four threads) and keeps about 2 MB per voice in memory; it is tied to the
+model instance that computed it (another model uses the voice unprepared, and preparing the voice for another model
+replaces the state). The runtime never writes the state to disk and has no export call; a product that adds one may
+store its own copy under the written permission in `WEIGHTS_PERMISSIONS.md`. On one i9 core a 44-character sentence then primes in 14 ms instead of 67 ms (99 characters:
 21 instead of 79; 321 characters: 77 instead of 139), and the first chunk follows about 8 ms later.
 
 On Android the runtime also pins its threads to the big cluster: the pool workers for good, and the thread that calls
