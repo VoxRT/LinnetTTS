@@ -168,8 +168,10 @@ Real-time factor = mean step time / 80 ms (the sentence-level figures in the bin
 First audio arrives 50–130 ms after the text on the phones and about 250 ms in the Android sample app on the Snapdragon 662
 (the prime pass plus one step, with the voice part of the prefix recomputed each time, as 0.1.x did). With a prepared voice
 (every binding's `loadVoice` / `load_voice` does it; C `linnet_voice_prepare`) the prime pass runs only the text rows: on one
-Core i9 core a 44-character sentence primes in 14 ms instead of 67 ms, first audio 22 ms instead of 75 ms; a re-primed session
-keeps the voice too. Peak memory is about 160 MB on Linux. Details, the in-app numbers and the effect of playback pacing: `docs/model-card.md`
+Core i9 core a 44-character sentence primes in 14 ms instead of 67 ms, first audio 22 ms instead of 75 ms (Apple M5, one
+core: 7 ms and about 10 ms); the Android sample app on the Snapdragon 662 shows prime 73–77 ms and first chunk 89–92 ms for
+the same sentence (96 / 153 ms on the first utterance after launch) instead of about 250 ms; a re-primed session keeps the
+voice too. Peak memory is about 160 MB on Linux. Details, the in-app numbers and the effect of playback pacing: `docs/model-card.md`
 ("Performance") and `bindings/README.md` ("Threads", "Playback and step time").
 
 ### Compared with other CPU TTS models
