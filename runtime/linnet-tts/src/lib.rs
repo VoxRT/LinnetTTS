@@ -43,7 +43,7 @@ pub use decoder::VocosDecoder;
 pub use error::{Error, Result};
 pub use lm::FlowLm;
 pub use pool::{auto_threads, ThreadPool};
-pub use session::{Linnet, Session, SynthParams};
+pub use session::{Linnet, Session, SynthParams, VoiceState};
 pub use tokenizer::Tokenizer;
 pub use voice::VoiceLatents;
 

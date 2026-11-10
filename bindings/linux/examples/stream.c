@@ -1,5 +1,5 @@
-/* Streaming synthesis: prime a session and write each 80 ms chunk to the WAV as it arrives.
- * Reports time to first audio and per-step latency.
+/* Streaming synthesis: prepare the voice, prime a session and write each 80 ms chunk to the
+ * WAV as it arrives. Reports the voice preparation, time to first audio and per-step latency.
  *
  *   ./stream <weights.safetensors> <tokenizer.model> <voice.npy> "text" out.wav [seed]
  */
@@ -34,6 +34,10 @@ int main(int argc, char **argv) {
 
   if ((rc = linnet_model_load(argv[1], argv[2], &model)) != LINNET_OK) return fail("model load", rc);
   if ((rc = linnet_voice_load(argv[3], &voice)) != LINNET_OK) return fail("voice load", rc);
+  /* Once per voice: sessions then skip the voice part of the prime pass. */
+  double tv = now_ms();
+  if ((rc = linnet_voice_prepare(model, voice)) != LINNET_OK) return fail("voice prepare", rc);
+  double prepare_ms = now_ms() - tv;
 
   linnet_params params = {0.3f, 2.0f, -1.0f, 300, 0};
   if (argc > 6) params.seed = strtoull(argv[6], NULL, 10);
@@ -69,9 +73,9 @@ int main(int argc, char **argv) {
   wav_close(f, (uint32_t)total);
 
   double secs = (double)total / rate;
-  printf("linnet-tts %s: prime %.1f ms, first audio %.1f ms, %zu steps, %.3f s audio in %.0f ms "
-         "(RTF %.1f %%, worst step %.1f ms of %.0f ms budget) -> %s\n",
-         linnet_version(), prime_ms, first_audio_ms, total / per_step, secs, total_ms,
+  printf("linnet-tts %s: voice prepared in %.1f ms (once); prime %.1f ms, first audio %.1f ms, %zu steps, "
+         "%.3f s audio in %.0f ms (RTF %.1f %%, worst step %.1f ms of %.0f ms budget) -> %s\n",
+         linnet_version(), prepare_ms, prime_ms, first_audio_ms, total / per_step, secs, total_ms,
          100.0 * total_ms / 1e3 / secs, max_step_ms, 1e3 * per_step / rate, argv[5]);
 
   free(chunk);

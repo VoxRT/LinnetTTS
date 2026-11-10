@@ -63,12 +63,26 @@ int linnet_threads(const linnet_model *model);
 int linnet_voice_load(const char *path, linnet_voice **out_voice);
 int linnet_voice_from_latents(const float *latents, size_t frames, size_t dim, linnet_voice **out_voice);
 void linnet_voice_free(linnet_voice *voice);
+/* Run the voice through the model once and keep the result in the voice, so
+ * that sessions created from it for that model (linnet_session_new,
+ * linnet_synthesize) skip the voice part of the prime pass: the first chunk
+ * then costs the text rows plus one step instead of the whole prefix (one
+ * desktop core: 14 ms instead of 67 ms for a short sentence). The audio is
+ * identical. About one prime pass to compute, 2 MB per voice, in memory only.
+ * Tied to the model it was prepared for; another model uses the voice
+ * unprepared. Preparing again replaces the state. Safe against concurrent
+ * session creation from the same voice. */
+int linnet_voice_prepare(const linnet_model *model, linnet_voice *voice);
+/* 1 when linnet_voice_prepare ran for this model, else 0. */
+int linnet_voice_is_prepared(const linnet_model *model, const linnet_voice *voice);
 
 /* Session: streaming synthesis. */
 int linnet_session_new(const linnet_model *model, const linnet_voice *voice, const linnet_params *params,
                        linnet_session **out_session);
 void linnet_session_free(linnet_session *session);
-/* Tokenize text (UTF-8) and run the prefix; may be called again for a new text.
+/* Tokenize text (UTF-8) and run the prefix; may be called again for a new text,
+ * and then only the text rows run: the session keeps the voice part of the
+ * prefix from its first prime (or from a prepared voice).
  * Text that produces no tokens (empty or whitespace) is LINNET_ERR_INVALID_ARG. */
 int linnet_session_prime(linnet_session *session, const char *text);
 /* Next chunk of 24 kHz float32 audio; cap must be >= linnet_samples_per_step
