@@ -15,7 +15,12 @@ shared golden vectors in `tests/goldens/` pin it down.
 ## Session
 
 1. **Prime**: tokenize the text; feed `[bos_voice] + voice_proj(voice latents) + text tokens` through the trunk once (KV cache). The
-   voice latents come from a voice file (`[T, 48]`, 12.5 Hz packing); the package never computes them.
+   voice latents come from a voice file (`[T, 48]`, 12.5 Hz packing); the package never computes them. The attention is causal, so
+   the trunk state of the voice part (`1 + T` positions, and the two-row prefix of the unconditional stream) does not depend on the
+   text: a session keeps it from its first prime on and a re-prime runs only the text rows, and a *prepared voice* (Rust
+   `Linnet::voice_state`, C `linnet_voice_prepare`, Python `Model.prepare_voice`, done by `load_voice` / `loadVoice` in the
+   bindings) gives new sessions the same head start. Every trunk value is one dot product in a fixed order whatever the row count,
+   so both paths are bit-identical to a full prime (`runtime/linnet-tts/tests/golden.rs`).
 2. **Step** (repeat): draw `x0`, run the trunk for the previous latent (or `bos_latent` for the first step), evaluate the EOS logit, run
    the flow head once (conditional and, when `cfg ≠ 1`, unconditional), get one 48-dim latent. If EOS fires on this step, the latent is
    discarded and the session ends.

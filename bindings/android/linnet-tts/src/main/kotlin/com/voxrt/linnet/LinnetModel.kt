@@ -39,13 +39,26 @@ class LinnetModel private constructor(handle: Long) : AutoCloseable {
     /** SentencePiece token ids of [text]. */
     fun tokenize(text: String): IntArray = LinnetNative.tokenize(nativeHandle, text)
 
-    /** Load `[T, latentDim]` latents from a `.npy` file and check the width against the model. */
-    fun loadVoice(path: String): Voice = checkVoice(Voice.load(path))
+    /**
+     * Load `[T, latentDim]` latents from a `.npy` file, check the width against the model and
+     * [prepare] the voice for it.
+     */
+    fun loadVoice(path: String): Voice = prepareOrClose(checkVoice(Voice.load(path)))
 
     fun loadVoice(file: File): Voice = loadVoice(file.absolutePath)
 
-    /** Parse a `.npy` image from memory and check the width against the model. */
-    fun voiceFromNpy(npy: ByteArray): Voice = checkVoice(Voice.fromNpy(npy))
+    /** Parse a `.npy` image from memory, check the width against the model and [prepare] the voice. */
+    fun voiceFromNpy(npy: ByteArray): Voice = prepareOrClose(checkVoice(Voice.fromNpy(npy)))
+
+    private fun prepareOrClose(v: Voice): Voice {
+        try {
+            prepare(v)
+        } catch (e: Throwable) {
+            v.close()
+            throw e
+        }
+        return v
+    }
 
     private fun checkVoice(v: Voice): Voice {
         if (v.dim != latentDim) {
@@ -55,6 +68,24 @@ class LinnetModel private constructor(handle: Long) : AutoCloseable {
         }
         return v
     }
+
+    /**
+     * Run [voice] through the model once and keep the result in the voice, so that sessions created
+     * from it for this model ([session], [synthesize]) skip the voice part of the prime pass: the
+     * first chunk then costs the text rows plus one step instead of the whole prefix. The audio is
+     * identical. Costs about one prime pass over the voice, keeps about 2 MB per voice, and is tied to
+     * this model instance: a voice holds one state, so preparing it for another model replaces the
+     * state and the first model falls back to the latents. [loadVoice] and [voiceFromNpy] call it for
+     * you (they therefore run the model and may throw for that reason too); [Voice.load],
+     * [Voice.fromNpy] and [Voice.fromLatents] do not. Returns [voice].
+     */
+    fun prepare(voice: Voice): Voice {
+        LinnetNative.voicePrepare(nativeHandle, voice.nativeHandle)
+        return voice
+    }
+
+    /** True when [voice] was prepared for this model. */
+    fun isPrepared(voice: Voice): Boolean = LinnetNative.voiceIsPrepared(nativeHandle, voice.nativeHandle)
 
     /**
      * Whole utterance in one call. Blocks for the full synthesis; the result is

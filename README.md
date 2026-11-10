@@ -59,7 +59,7 @@ flow LM 31.5 M including the 3.1 M text table, decoder 9.9 M; 38.4 M outside the
 
    `local/` is gitignored: nothing you put there is committed.
 
-2. **Rust runtime.** As a dependency: `linnet-tts = { git = "https://github.com/VoxRT/LinnetTTS", tag = "v0.1.1" }` (the crate
+2. **Rust runtime.** As a dependency: `linnet-tts = { git = "https://github.com/VoxRT/LinnetTTS", tag = "v0.2.0" }` (the crate
    is not on crates.io; see the crate docs with `cargo doc --no-deps` in `runtime/`). The `synth` example takes the weights, the tokenizer, a voice, the text and an output WAV, followed by
    the optional `temp` (0.3), `cfg` (2.0), `seed` (0) and `threads` (0 = automatic):
 
@@ -83,7 +83,9 @@ flow LM 31.5 M including the 3.1 M text table, decoder 9.9 M; 38.4 M outside the
    ```
 
    Streaming: `session = model.session(voice, seed=0)`, `session.prime(text)`, then iterate `for chunk in session`
-   (1920 samples = 80 ms per step; the first chunk is 720 samples shorter, the last one is 720 zeros). See `bindings/python/README.md`.
+   (1920 samples = 80 ms per step; the first chunk is 720 samples shorter, the last one is 720 zeros). `load_voice` prepares the
+   voice for the model, so a prime pass runs only the text rows (one desktop core: 14 ms instead of 67 ms for a short
+   sentence); a re-primed session keeps the voice too. See `bindings/python/README.md`.
 
 4. **PyTorch reference** (`python/`, fp32, bit-exact against the training-side vectors, not optimised for speed):
    `pip install ./python`.
@@ -163,8 +165,19 @@ only by x86-64 builds; use it as a check there.
 | Raspberry Pi Zero 2 W, Cortex-A53 1 GHz | 1 / 4 (auto) | 158 / 59–60 ms | 198 / 75 % |
 
 Real-time factor = mean step time / 80 ms (the sentence-level figures in the binding READMEs also include the prime pass).
-First audio arrives 50–130 ms after the text on the phones and about 250 ms in the Android sample app on the Snapdragon 662
-(the prime pass plus one step). Peak memory is about 160 MB on Linux. Details, the in-app numbers and the effect of playback pacing: `docs/model-card.md`
+First audio = the prime pass plus one step. With the whole prefix in every prime pass (the 0.1.x runtime) it arrived
+50–130 ms after the text on the phones and about 250 ms in the Android sample app on the Snapdragon 662. With a prepared
+voice (0.2: every binding's `loadVoice` / `load_voice` does it, C `linnet_voice_prepare`) the prime pass runs only the text
+rows, and a re-primed session keeps the voice too. Same 44-character sentence: one Core i9 core, prime 14 ms instead of 67 ms,
+first audio 22 ms instead of 75 ms; Apple M5, one core, prime 7 ms (first audio about 10 ms, measured prime plus the
+3.3 ms step); iPhone 13 Pro Max sample app, one thread, prime 29 ms and first chunk 38 ms instead of 79 / 85 ms; iPhone 11,
+first chunk 38–45 ms instead of 107–116 ms; Android
+sample app on the Snapdragon 662, four threads, prime 73–77 ms and first chunk 89–92 ms warm (first utterance after
+launch: prime 96 ms, first chunk 153 ms) instead of about 250 ms. From there to the first sample at the speaker the
+platforms add their own output latency: about 105–110 ms on the iPhones and 65–110 ms on the Snapdragon 662 with the audio
+route already open, more when the first chunk has to open it; from a cold process launch with the files in the OS cache,
+tap to first sound is about 0.4–0.5 s on the iPhone 11 (the binding READMEs, "Playback timing"). Peak memory is
+about 160 MB on Linux. Details, the in-app numbers and the effect of playback pacing: `docs/model-card.md`
 ("Performance") and `bindings/README.md` ("Threads", "Playback and step time").
 
 ### Compared with other CPU TTS models
@@ -176,7 +189,7 @@ File sizes are decimal megabytes (10^6 bytes), as in the weights table below.
 
 | model | languages | params | weights | cloning | streaming | RTF, 1 thread | RTF, 4 threads | first audio (short / long text) | peak RSS |
 |---|---|---|---|---|---|---|---|---|---|
-| Linnet `linnet-en-35m` (fp16, Rust) | English | 41 M | 83 MB | yes | every 80 ms | 10.6 % | 3.4 % | 87 / 133 ms | 187 MB |
+| Linnet `linnet-en-35m` (fp16, Rust; 0.1.1, voice re-read in every prime, see "Performance" for 0.2) | English | 41 M | 83 MB | yes | every 80 ms | 10.6 % | 3.4 % | 87 / 133 ms | 187 MB |
 | pocket-tts 4.0.1 (PyTorch) | English (7 languages, one model each) | 100 M | 236 MB | yes | every 80 ms | 23.8 % (2 cores) | 24.1 % | 71 / 82 ms | 968 MB |
 | Kokoro-82M (ONNX fp32) | 8 languages in one model | 81 M | 354 MB | no | no | 51.7 % | 17.2 % | 1.5 / 9.6 s | 1246 MB |
 | Piper `en_US-ljspeech-medium` (ONNX) | English (one model per voice, many languages) | 16 M | 64 MB | no | per sentence | 5.8 % | 2.1 % | 180 / 283 ms | 503 MB |
@@ -200,7 +213,8 @@ Model weights are not in this repository and are not bundled in any package. Dow
 
 The runtime needs three files: the fp16 weights, `tokenizer.model` and one voice `.npy`. Check `SHA256SUMS` after
 downloading. The weights are licensed under the Linnet Weights License (`WEIGHTS_LICENSE.md`), not under Apache-2.0.
-Products that ship or use them show the notices in Section 8 of that license.
+Products that ship or use them show the notices in Section 8 of that license. Written permissions given under its
+Section 15.2 (at present: storing a prepared voice state inside a product) are collected in `WEIGHTS_PERMISSIONS.md`.
 The weight container is documented in `docs/weights-format.md`.
 
 ## Versioning

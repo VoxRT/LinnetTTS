@@ -152,6 +152,30 @@ final class LinnetTTSTests: XCTestCase {
         XCTAssertLessThanOrEqual(model.threads, 4)
     }
 
+    /// `loadVoice` prepares the voice; a voice loaded without the model does not get prepared until
+    /// `prepare(voice:)`. Prepared, unprepared and re-primed sessions give the same bytes.
+    func testPreparedVoiceIsBitExact() throws {
+        let (model, voice) = try loadModel()
+        XCTAssertTrue(model.isPrepared(voice: voice))
+        let raw = try Voice.load(path: Self.assets!.voice)
+        XCTAssertFalse(model.isPrepared(voice: raw))
+        let params = SynthParams(seed: 4)
+        let plain = try model.synthesize(text: text, voice: raw, params: params)
+        XCTAssertEqual(try model.synthesize(text: text, voice: voice, params: params), plain)
+        let s = try model.session(voice: voice, params: params)
+        try s.prime(text: "Hello there.")
+        _ = try s.remaining()
+        try s.prime(text: text)
+        XCTAssertEqual(try s.remaining(), plain, "re-primed session")
+        try model.prepare(voice: raw)
+        XCTAssertTrue(model.isPrepared(voice: raw))
+        XCTAssertEqual(try model.synthesize(text: text, voice: raw, params: params), plain, "prepared later")
+        let other = try LinnetModel(weightsPath: Self.assets!.weights, tokenizerPath: Self.assets!.tokenizer)
+        XCTAssertFalse(other.isPrepared(voice: voice), "a state belongs to the model that computed it")
+        XCTAssertTrue(model.isPrepared(voice: voice), "loading another model does not touch it")
+        XCTAssertEqual(try other.synthesize(text: text, voice: voice, params: params), plain, "another model falls back")
+    }
+
     /// Timing per thread count: prime, first chunk, mean and worst step, RTF. Printed, not asserted.
     func testPerformanceReport() throws {
         let (model, voice) = try loadModel()

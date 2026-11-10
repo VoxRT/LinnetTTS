@@ -26,15 +26,21 @@ player.drain()
 | `LinnetModel(weightsPath:tokenizerPath:)`, `LinnetModel(weightsURL:tokenizerURL:)` | `LinnetModel(weightsPath, tokenizerPath)` | `Model(weights, tokenizer)` |
 | `.sampleRate`, `.samplesPerStep`, `.outputDelay`, `.latentDim`, `LinnetModel.version` | same | same |
 | `.threads` (get/set; 0 = automatic, getter returns the resolved count) | `SynthParams.threads` | `threads=` |
-| `.loadVoice(path:)`, `.loadVoice(url:)`, `Voice.load(path:)`, `Voice(latents:frames:dim:)`, `.frames`, `.dim` | `loadVoice`, `Voice.load`, `Voice.fromLatents` | `load_voice`, `Voice.from_array` |
+| `.loadVoice(path:)`, `.loadVoice(url:)` (both prepare the voice), `.prepare(voice:)`, `.isPrepared(voice:)`, `Voice.load(path:)`, `Voice(latents:frames:dim:)`, `.frames`, `.dim` | `loadVoice`, `prepare`, `isPrepared`, `Voice.load`, `Voice.fromLatents` | `load_voice`, `prepare_voice`, `is_prepared`, `Voice.from_array` |
 | `.synthesize(text:voice:params:) -> [Float]` | `synthesize(text, voice, params)` | `synthesize(...)` |
 | `.session(voice:params:) -> LinnetSession`; `.prime(text:)`, `.step() -> [Float]?`, `.step(into:) -> Int`, `.remaining()`, `.finished`, `.chunksEmitted` | `session`, `prime`, `step`, `stepInto`, `chunks`, `finished` | `session`, `prime`, `step`, iteration, `finished` |
 | `SynthParams(temp:cfg:maxFrames:eosThreshold:seed:threads:)` | `SynthParams(...)` | keywords |
 | `LinnetError` (`.invalidArgument`, `.io`, `.format`, `.shape`, `.bufferTooSmall`, `.internalError`; `.code`, `.message`) | `LinnetException(code, message)` | `IOError` / `ValueError` |
-| `LinnetPlayer(sampleRate:bufferMillis:)`: `.write(_:)`, `.drain()`, `.stop()` | `AudioTrackPlayer` | - |
+| `LinnetPlayer(sampleRate:bufferMillis:)`: `.write(_:)`, `.drain()`, `.stop()`, `.prewarm()`, `.timing` | `AudioTrackPlayer` (`write`, `drain`, `stopNow`, `prewarm`, `timing`) | - |
 
 Not in the C API, hence not here: `tokenize`, `latent()`, `frames`. `outputDelay` (720) and `latentDim` (48) are
 constants of the streaming contract.
+
+**Prepared voices.** `loadVoice` runs the voice through the model once and keeps the result in the `Voice`, so sessions
+created from it (and `synthesize`) skip the voice part of the prime pass: the first chunk then costs the text rows plus
+one step. `Voice.load(path:)` and `Voice(latents:frames:dim:)` do not know the model; call `model.prepare(voice:)` on
+those. Once per voice, about one prime pass over the voice (39 ms on an Apple M5 core), 2 MB per voice; the audio is
+identical. A re-primed session keeps the voice as well. See `bindings/README.md`, "Prepared voices".
 
 Chunk layout follows `docs/streaming-contract.md`: the first chunk is `samplesPerStep - outputDelay` samples
 (1200), later ones `samplesPerStep` (1920), the last one `outputDelay` (720) zeros, and the concatenation is
@@ -44,8 +50,8 @@ sample for sample the result of `synthesize` with the same parameters and seed (
 session keeps strong references to its model and voice, so the C API's "free sessions before the model" rule
 is enforced by ARC; drop references in any order.
 
-**Threads.** `LinnetModel` and `Voice` are immutable (apart from `threads`) and may be shared across threads and
-sessions. A `LinnetSession` is single-threaded: drive it from one queue at a time; different sessions of the
+**Threads.** `LinnetModel` and `Voice` may be shared across threads and sessions: the model is immutable apart
+from `threads`, and a voice changes only through `prepare(voice:)`, which replaces its state under a lock. A `LinnetSession` is single-threaded: drive it from one queue at a time; different sessions of the
 same model may run concurrently. `threads` selects the worker count of the model's persistent pool (1 =
 single-threaded, 0 = automatic, which is one thread on Apple platforms because it is tuned for the phones, where a second core does not pay off); `SynthParams.threads` applies it when a
 session is created. The audio is bit-identical for every thread count. Change it between utterances, not while
@@ -177,7 +183,8 @@ threads 4 mean 2.7 ms (two threads pay off on an M5; `auto` still resolves to on
 the same numbers in a Release test host; it does not predict a phone. Device runs: `device-smoke.sh` (needs an
 unlocked login keychain on the Mac for `codesign`).
 
-Device results (measured on 0.0.1, unchanged in 0.1.0; iPhone 13 Pro Max, A15, iOS 27, hosted `LinnetSampleTests`, release): all 6 tests pass; the audio
+Device results (measured on 0.0.1, unchanged in 0.1.0, with the voice part of the prefix recomputed in every prime; since 0.2
+`loadVoice` prepares the voice and the test's prime is text-only, see "Playback timing" below; iPhone 13 Pro Max, A15, iOS 27, hosted `LinnetSampleTests`, release): all 6 tests pass; the audio
 MD5s equal the macOS host and simulator values for every thread count (same NEON kernels, thread-count independent
 result). Timings on the 68-step sentence (5.44 s of audio): threads 1 — prime 79 ms, first chunk 85 ms, mean step
 5.50 ms (worst 6.0), RTF 8.3 %; threads 2 (`auto` resolved to the two performance cores when this was measured; it is
@@ -194,6 +201,27 @@ management, not runtime cost: `-noaudio` or `-nopace` (synthesis never blocks on
 with the audio engine running and the UI updating. Measure throughput without pacing; for the tightest
 real-time margin on slow phones, synthesize in bursts with a large queue (`LinnetPlayer(bufferMillis:)`; the default
 of 8 s, also the sample's default, does this) so the core runs at full clock and then sleeps. `device-pace-experiment.sh` runs these modes on a device.
+
+**Playback timing (0.2).** `LinnetPlayer.timing` records when the first buffer went through the output: when it was
+scheduled, the onset of its first sample at the device (the player node's render clock plus
+`AVAudioSession.outputLatency`, and, as a cross-check, the first `.dataPlayedBack` callback minus the buffer's
+duration) and that callback itself, i.e. when the first buffer had fully played back (Apple accounts for the device
+latency in it; it marks the *end* of the first 50 ms chunk, not the onset). `prewarm()` starts the engine and plays
+50 ms of silence before the first chunk; otherwise the first `write` starts the engine. The sample takes `-prewarm`.
+iPhone 13 Pro Max (A15), 44-character sentence, one thread, prepared voice, six runs each: engine started by the
+first chunk — prime 29 ms, first chunk 38 ms, scheduled at 82–83 ms (`engine.start()` + `play()` take about 45 ms),
+first sample at the speaker 182–183 ms (190–193 ms by subtraction), first buffer fully played back 240–243 ms (the
+first utterance after launch: 112 / 212 / 267 ms); engine prewarmed — prime 29–32 ms, first chunk 39–42 ms, scheduled
+at once, first sample 148 ms by both methods, fully played back 197–202 ms. The 105–110 ms between scheduling and the
+sound is the audio engine's and the device's output latency, not a buffer of the player: playback starts on the first
+buffer. iPhone 11 (A13), same protocol (Low Power Mode off; with it on every compute figure doubles): engine started by
+the first chunk — first chunk 41–45 ms, scheduled at 79–84 ms, first sample 176–182 ms, fully played back 230–241 ms
+(first utterance after a process launch: 28 / 130 / 227 / 288 ms); engine prewarmed — first chunk 38–40 ms, first sample
+145–147 ms, fully played back 192–200 ms. Without the audio engine (`-noaudio`) the A13 primes the same sentence in
+16–17 ms and returns the first chunk at 23–27 ms; with the engine running, the 2.5 s of idle playback between utterances
+lets the core clock down, and the next prime takes about 30 ms. A process launch with the files in the OS cache loads the
+model in 135–223 ms (weights 53–143 ms, voice 80–82 ms), so tap-to-first-sound from a cold process is about 0.4–0.5 s on
+the A13.
 
 Baseline device (iPhone 11, A13, iOS 26, sample app, 80-step sentence): threads 1 — prime 97–106 ms, first chunk
 107–116 ms, mean step 7.1 ms (worst 9.6) without pacing (re-measured on 0.1.0: prime 99–113 ms, first chunk 109–122 ms, mean

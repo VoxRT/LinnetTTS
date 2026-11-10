@@ -11,6 +11,9 @@ import LinnetTTS
 ///   `-repeat N`             repeat the utterance N times (default 1) and report the sum;
 ///   `-nopace`               do not block on playback (pure compute timing);
 ///   `-bufferms N`           queue N ms of audio ahead of playback (default 8000);
+///   `-prewarm`              open the output route (engine running, 50 ms of silence) before the timer starts;
+///                           without it the first chunk opens the route; the log line shows both the time the first
+///                           sample reached the output (onset) and the time the first chunk had fully played back;
 ///   `-noaudio`, `-quiet`, `-qos`: see the fields below.
 final class Speaker: ObservableObject {
     @Published var status = "loading..."
@@ -35,6 +38,8 @@ final class Speaker: ObservableObject {
     private var noAudio = false
     /// Audio kept queued ahead of playback; `-nopace` makes it effectively unlimited (`-bufferms N` sets it).
     private var bufferMillis = 8000
+    /// `-prewarm`: open the output route before timing starts.
+    private var prewarm = false
     private var model: LinnetModel?
     private var voice: Voice?
     private var player: LinnetPlayer?
@@ -57,6 +62,7 @@ final class Speaker: ObservableObject {
         let flags = Set(CommandLine.arguments)                                   // bare flags are not key/value pairs
         quiet = flags.contains("-quiet")
         noAudio = flags.contains("-noaudio")
+        prewarm = flags.contains("-prewarm")
         if flags.contains("-nopace") { bufferMillis = 600_000 }                 // never block on the player: measures pure compute
         else if let b = args.object(forKey: "bufferms") as? String, let n = Int(b), n > 0 { bufferMillis = n }
         queue.async { [self] in
@@ -72,12 +78,14 @@ final class Speaker: ObservableObject {
                 let t0 = Date()
                 let m = try LinnetModel(weightsURL: dir.appendingPathComponent(Self.files[0]),
                                         tokenizerURL: dir.appendingPathComponent(Self.files[1]))
+                let weightsMs = Date().timeIntervalSince(t0) * 1000
+                // loadVoice also prepares the voice: the prime pass then runs only the text.
                 let v = try m.loadVoice(url: dir.appendingPathComponent(Self.files[2]))
                 let ms = Date().timeIntervalSince(t0) * 1000
                 model = m
                 voice = v
-                let msg = String(format: "model %@ loaded in %.0f ms (%d Hz, %d samples/step, %d threads)",
-                                 LinnetModel.version, ms, m.sampleRate, m.samplesPerStep, m.threads)
+                let msg = String(format: "model %@ loaded in %.0f ms (weights %.0f ms, voice %.0f ms; %d Hz, %d samples/step, %d threads)",
+                                 LinnetModel.version, ms, weightsMs, ms - weightsMs, m.sampleRate, m.samplesPerStep, m.threads)
                 log(msg)
                 DispatchQueue.main.async { self.ready = true; self.status = msg }
                 if let text = auto {
@@ -125,6 +133,7 @@ final class Speaker: ObservableObject {
         guard let model, let voice else { return "model not loaded" }
         let player: LinnetPlayer? = noAudio ? nil : try LinnetPlayer(sampleRate: model.sampleRate, bufferMillis: bufferMillis)
         self.player = player
+        if prewarm { try player?.prewarm() }
         let session = try model.session(voice: voice, params: SynthParams(seed: 0, threads: threads))
         let t0 = Date()
         try session.prime(text: text)
@@ -148,10 +157,16 @@ final class Speaker: ObservableObject {
         }
         if let player { if cancelled { player.stop() } else { player.drain() } }
         let audioMs = Double(samples) / Double(model.sampleRate) * 1000
+        var playback = ""
+        if let player, !cancelled {
+            let t = player.timing
+            let ms = { (d: Date?) -> String in d.map { String(format: "%.0f", $0.timeIntervalSince(t0) * 1000) } ?? "n/a" }
+            playback = "\nplayback (route \(t.routeWasOpen ? "prewarmed" : "opened by the first chunk")): first buffer \(t.firstBufferSamples) samples scheduled at \(ms(t.firstBufferScheduled)) ms, onset \(ms(t.onsetFromClock)) ms by the render clock / \(ms(t.onsetBySubtraction)) ms by subtraction, first buffer fully played back at \(ms(t.firstBufferPlayedBack)) ms"
+        }
         let line = String(
             format: "%@qos %@%@ threads %d: prime %.0f ms, first chunk %.0f ms, step mean %.1f ms, worst %.1f ms (80 ms budget)\n%d steps, %.0f ms audio in %.0f ms: RTF %.1f %% (playback pacing excluded)",
             cancelled ? "stopped. " : "", UserDefaults.standard.string(forKey: "qos") ?? "initiated", (noAudio ? " noaudio" : "") + (quiet ? " quiet" : "") + (bufferMillis > 10_000 ? " nopace" : ""), model.threads, primeMs, firstMs, stepTotal / Double(max(1, steps + 1)), worst,
-            steps, audioMs, primeMs + stepTotal, 100 * (primeMs + stepTotal) / max(1, audioMs))
+            steps, audioMs, primeMs + stepTotal, 100 * (primeMs + stepTotal) / max(1, audioMs)) + playback
         log(line)
         return line
     }

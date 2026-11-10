@@ -7,7 +7,17 @@
 //! frames = 1920 samples; the first chunk is shorter by `output_delay`
 //! samples and the session ends with `output_delay` zeros, so that the
 //! concatenated chunks equal the offline decode of the same latents.
+//!
+//! The prefix starts with the voice (`[bos_voice | voice_proj(voice)]`,
+//! `1 + frames` positions) and the attention is causal, so the trunk
+//! state of those positions does not depend on the text. A session keeps
+//! it from its first `prime` on, and re-priming runs only the text rows;
+//! a [`VoiceState`] holds the same rows outside any session, so that a
+//! session created from it skips the voice part of its first prime too.
+//! Both paths produce the same bits as a full prime: every value of the
+//! trunk is one dot product in a fixed order, whatever the row count.
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use linnet_ops::Xoshiro256StarStar;
@@ -15,7 +25,7 @@ use linnet_ops::Xoshiro256StarStar;
 use crate::config::ModelConfig;
 use crate::decoder::{DecoderScratch, DecoderState, VocosDecoder};
 use crate::error::{Error, Result};
-use crate::lm::{FlowLm, LmScratch, TrunkState};
+use crate::lm::{FlowLm, LmScratch, PrefixKv, TrunkState};
 use crate::pool::{auto_threads, ThreadPool};
 use crate::safetensors::SafeTensors;
 use crate::tokenizer::Tokenizer;
@@ -56,10 +66,57 @@ impl Default for SynthParams {
     }
 }
 
+/// The part of a session's trunk state that depends on the voice and the
+/// model but not on the text: the KV rows of the voice prefix
+/// (`1 + frames` positions of the conditional stream), the two-row
+/// prefix of the unconditional stream and the latter's output. Computed
+/// once per voice by [`Linnet::voice_state`]; a session created with
+/// [`Session::with_voice_state`] starts from a copy and its first prime
+/// runs only the text rows, like every re-prime of an existing session.
+/// About 2 MB for a 76-frame voice (f32), in memory only.
+pub struct VoiceState {
+    model_id: u64,
+    frames: usize,
+    dim: usize,
+    cond: PrefixKv,
+    null: PrefixKv,
+    z_null: Vec<f32>,
+}
+
+impl VoiceState {
+    /// Frames of the voice prompt.
+    pub fn frames(&self) -> usize {
+        self.frames
+    }
+
+    /// Width of the voice latents.
+    pub fn dim(&self) -> usize {
+        self.dim
+    }
+
+    /// Positions of the prefix a session skips when it starts from this
+    /// state (`1 + frames`).
+    pub fn prefix_len(&self) -> usize {
+        self.cond.len()
+    }
+
+    /// True when `model` is the instance that computed this state (the
+    /// only one it can be used with).
+    pub fn is_for(&self, model: &Linnet) -> bool {
+        self.model_id == model.id
+    }
+}
+
+/// Identity of a loaded model within the process, so that a
+/// [`VoiceState`] is never used with a model other than the one that
+/// computed it.
+static NEXT_MODEL_ID: AtomicU64 = AtomicU64::new(1);
+
 /// Weights, tokenizer and derived constants. Immutable apart from the
 /// thread setting, shareable between threads; every other mutable piece
 /// lives in a [`Session`].
 pub struct Linnet {
+    id: u64,
     cfg: ModelConfig,
     lm: FlowLm,
     decoder: VocosDecoder,
@@ -101,6 +158,7 @@ impl Linnet {
             cfg.sample_rate,
         );
         Ok(Linnet {
+            id: NEXT_MODEL_ID.fetch_add(1, Ordering::Relaxed),
             cfg,
             lm,
             decoder: dec,
@@ -186,18 +244,65 @@ impl Linnet {
     pub fn synthesize(&self, text: &str, voice: &VoiceLatents, params: SynthParams) -> Result<Vec<f32>> {
         let mut s = Session::new(self, voice, params)?;
         s.prime(text)?;
-        let mut out = Vec::with_capacity(params.max_frames * self.samples_per_step());
-        while let Some(chunk) = s.step() {
-            out.extend_from_slice(chunk);
+        Ok(s.collect())
+    }
+
+    /// [`Linnet::synthesize`] from a prepared [`VoiceState`]: the same
+    /// audio, without the voice part of the prime pass.
+    pub fn synthesize_with_state(&self, text: &str, state: &VoiceState, params: SynthParams) -> Result<Vec<f32>> {
+        let mut s = Session::with_voice_state(self, state, params)?;
+        s.prime(text)?;
+        Ok(s.collect())
+    }
+
+    /// Run the voice prefix and the unconditional prefix through the
+    /// trunk once, for any number of sessions to start from
+    /// ([`Session::with_voice_state`]). Costs about one prime pass over the
+    /// voice; the result is tied to this model instance.
+    pub fn voice_state(&self, voice: &VoiceLatents) -> Result<VoiceState> {
+        let _big = crate::pool::affinity::BigCoreGuard::enter();
+        let ld = self.cfg.lm.latent_dim;
+        let d = self.cfg.lm.d_model;
+        if voice.dim() != ld {
+            return Err(Error::Invalid(format!(
+                "voice latents have width {}, the model expects {ld}",
+                voice.dim()
+            )));
         }
-        Ok(out)
+        let lm = &self.lm;
+        let pool = self.pool();
+        let nv = 1 + voice.frames();
+        let mut sc = lm.new_scratch(1, nv.max(2));
+        let mut rows = vec![0.0; nv * d];
+        lm.build_voice_rows(voice.latents(), &mut rows)?;
+        let mut st = lm.new_state(nv);
+        lm.prefill(&mut rows, nv, &mut st, &mut sc, &pool)?;
+        let cond = st.export_prefix(nv);
+        rows.clear();
+        rows.resize(2 * d, 0.0);
+        lm.build_null_prefix(&mut rows);
+        let mut st_null = lm.new_state(2);
+        lm.prefill(&mut rows, 2, &mut st_null, &mut sc, &pool)?;
+        let null = st_null.export_prefix(2);
+        let mut z_null = vec![0.0; d];
+        lm.out_norm(&rows[d..], &mut z_null);
+        Ok(VoiceState { model_id: self.id, frames: voice.frames(), dim: ld, cond, null, z_null })
     }
 }
 
 /// One utterance in progress.
 pub struct Session<'m> {
     model: &'m Linnet,
+    /// Voice latents, used by the first prime only; empty when the session
+    /// started from a [`VoiceState`].
     voice: Vec<f32>,
+    /// Positions of the voice prefix (`1 + frames`).
+    nv: usize,
+    /// The voice prefix (and, with guidance, the unconditional prefix and
+    /// `z_null`) are in the trunk states; a prime runs only the text rows.
+    voice_kept: bool,
+    /// Output of the unconditional prefix, restored at each re-prime.
+    z_null: Vec<f32>,
     params: SynthParams,
     n_streams: usize,
     states: Vec<TrunkState>,
@@ -223,17 +328,43 @@ pub struct Session<'m> {
 }
 
 impl<'m> Session<'m> {
-    /// Allocate a session for `voice`. Call [`Session::prime`] before stepping.
+    /// Allocate a session for `voice`. Call [`Session::prime`] before
+    /// stepping. The first prime runs the whole prefix; the voice part of
+    /// its state is kept, so later primes of the same session run only
+    /// the text rows.
     pub fn new(model: &'m Linnet, voice: &VoiceLatents, params: SynthParams) -> Result<Self> {
-        let cfg = &model.cfg;
-        let ld = cfg.lm.latent_dim;
-        let d = cfg.lm.d_model;
+        let ld = model.cfg.lm.latent_dim;
         if voice.dim() != ld {
             return Err(Error::Invalid(format!(
                 "voice latents have width {}, the model expects {ld}",
                 voice.dim()
             )));
         }
+        Self::new_inner(model, voice.latents().to_vec(), voice.frames(), params)
+    }
+
+    /// Allocate a session that starts from `state` ([`Linnet::voice_state`]
+    /// of the same model): the first prime already runs only the text
+    /// rows. The audio is identical to a session made with
+    /// [`Session::new`] from the same voice.
+    pub fn with_voice_state(model: &'m Linnet, state: &VoiceState, params: SynthParams) -> Result<Self> {
+        if state.model_id != model.id {
+            return Err(Error::Invalid("voice state was prepared for a different model".into()));
+        }
+        let mut s = Self::new_inner(model, Vec::new(), state.frames, params)?;
+        s.states[0].import_prefix(&state.cond)?;
+        if s.n_streams == 2 {
+            s.states[1].import_prefix(&state.null)?;
+            s.z_null.copy_from_slice(&state.z_null);
+        }
+        s.voice_kept = true;
+        Ok(s)
+    }
+
+    fn new_inner(model: &'m Linnet, voice: Vec<f32>, frames: usize, params: SynthParams) -> Result<Self> {
+        let cfg = &model.cfg;
+        let ld = cfg.lm.latent_dim;
+        let d = cfg.lm.d_model;
         if !(params.temp >= 0.0 && params.temp.is_finite()) {
             return Err(Error::Invalid(format!("temp {} must be finite and >= 0", params.temp)));
         }
@@ -245,12 +376,15 @@ impl<'m> Session<'m> {
         }
         model.set_threads(params.threads);
         let n_streams = if params.cfg == 1.0 { 1 } else { 2 };
-        let cap = 2 + voice.frames() + params.max_frames + 2;
+        let cap = 2 + frames + params.max_frames + 2;
         let states = (0..n_streams).map(|_| model.lm.new_state(cap)).collect();
         let sps = model.samples_per_step();
         Ok(Session {
             model,
-            voice: voice.latents().to_vec(),
+            voice,
+            nv: 1 + frames,
+            voice_kept: false,
+            z_null: vec![0.0; d],
             params,
             n_streams,
             states,
@@ -277,7 +411,11 @@ impl<'m> Session<'m> {
     }
 
     /// Tokenize `text` and run the prefix through the trunk. Resets any
-    /// previous utterance (the KV caches must fit the new prefix).
+    /// previous utterance; the voice part of the prefix is kept
+    /// ([`Session::voice_kept`]), so only the text rows run, and the KV
+    /// caches grow when the new text needs more room. On an error the
+    /// session is not primed (`step` returns `None`) until a later prime
+    /// succeeds.
     pub fn prime(&mut self, text: &str) -> Result<()> {
         if text.trim().is_empty() {
             return Err(Error::Invalid("empty input: the text is blank".into()));
@@ -292,18 +430,26 @@ impl<'m> Session<'m> {
             return Err(Error::Invalid("empty input: the text produced no tokens".into()));
         }
         let _big = crate::pool::affinity::BigCoreGuard::enter();
+        self.primed = false; // until the new prefix is in place: a failure below must not leave the old one steppable
         let lm = &self.model.lm;
         let d = self.model.cfg.lm.d_model;
-        let ld = self.model.cfg.lm.latent_dim;
-        let tv = self.voice.len() / ld;
+        let tv = self.nv - 1;
         let prefix_len = lm.prefix_len(tokens.len(), tv);
         let cap = prefix_len + self.params.max_frames + 2;
-        for st in &mut self.states {
-            if st.capacity() < cap {
-                *st = lm.new_state(cap);
-            } else {
+        // Drop the previous utterance first (only the voice positions, and
+        // the unconditional prefix, survive), then make room for the new one.
+        if self.voice_kept {
+            self.states[0].truncate(self.nv);
+            if self.n_streams == 2 {
+                self.states[1].truncate(2);
+            }
+        } else {
+            for st in &mut self.states {
                 st.reset();
             }
+        }
+        for st in &mut self.states {
+            st.grow(cap); // keeps the positions written so far
         }
         if self.sc.m_capacity_scores() < cap {
             self.sc = lm.new_scratch(self.n_streams, cap);
@@ -318,21 +464,47 @@ impl<'m> Session<'m> {
         let pool = self.model.pool();
         let mut rows = std::mem::take(&mut self.prefix_rows);
         rows.clear();
-        rows.resize(prefix_len * d, 0.0);
-        lm.build_prefix(tokens, &self.voice, &mut rows)?;
-        lm.prefill(&mut rows, prefix_len, &mut self.states[0], &mut self.sc, &pool)?;
-        lm.out_norm(&rows[(prefix_len - 1) * d..], &mut self.z_rows[..d]);
-        if self.n_streams == 2 {
-            rows.clear();
-            rows.resize(2 * d, 0.0);
-            lm.build_null_prefix(&mut rows);
-            lm.prefill(&mut rows, 2, &mut self.states[1], &mut self.sc, &pool)?;
-            lm.out_norm(&rows[d..], &mut self.z_rows[d..]);
+        if self.voice_kept {
+            // The voice positions (and the unconditional prefix) are in
+            // the states: drop the previous text and run the new one. The
+            // K/V of every row is one fixed-order dot product per value,
+            // so the result equals a full prime bit for bit.
+            let t = tokens.len() + 1;
+            rows.resize(t * d, 0.0);
+            lm.build_text_rows(tokens, &mut rows)?;
+            lm.prefill(&mut rows, t, &mut self.states[0], &mut self.sc, &pool)?;
+            lm.out_norm(&rows[(t - 1) * d..], &mut self.z_rows[..d]);
+            if self.n_streams == 2 {
+                self.z_rows[d..].copy_from_slice(&self.z_null);
+            }
+        } else {
+            rows.resize(prefix_len * d, 0.0);
+            lm.build_prefix(tokens, &self.voice, &mut rows)?;
+            lm.prefill(&mut rows, prefix_len, &mut self.states[0], &mut self.sc, &pool)?;
+            lm.out_norm(&rows[(prefix_len - 1) * d..], &mut self.z_rows[..d]);
+            if self.n_streams == 2 {
+                rows.clear();
+                rows.resize(2 * d, 0.0);
+                lm.build_null_prefix(&mut rows);
+                lm.prefill(&mut rows, 2, &mut self.states[1], &mut self.sc, &pool)?;
+                lm.out_norm(&rows[d..], &mut self.z_rows[d..]);
+                self.z_null.copy_from_slice(&self.z_rows[d..]);
+            }
+            self.voice_kept = true;
         }
         self.prefix_rows = rows;
         self.mix_z();
         self.primed = true;
         Ok(())
+    }
+
+    /// Every remaining chunk, concatenated.
+    pub fn collect(&mut self) -> Vec<f32> {
+        let mut out = Vec::with_capacity(self.params.max_frames * self.model.samples_per_step());
+        while let Some(chunk) = self.step() {
+            out.extend_from_slice(chunk);
+        }
+        out
     }
 
     /// `z = z_null + cfg · (z_cond − z_null)` (or `z_cond` without guidance).
@@ -469,5 +641,12 @@ impl<'m> Session<'m> {
 
     pub fn params(&self) -> &SynthParams {
         &self.params
+    }
+
+    /// True once the voice prefix is in the trunk state (after the first
+    /// prime, or from construction with [`Session::with_voice_state`]):
+    /// the next prime runs only the text rows.
+    pub fn voice_kept(&self) -> bool {
+        self.voice_kept
     }
 }

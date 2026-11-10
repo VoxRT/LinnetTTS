@@ -21,13 +21,13 @@
 #![allow(non_snake_case)]
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use jni::objects::{JByteArray, JFloatArray, JIntArray, JObject, JString, JValue};
 use jni::sys::{jboolean, jfloat, jint, jlong, JNI_FALSE, JNI_TRUE};
 use jni::JNIEnv;
 
-use linnet_tts::{Error, Linnet, Session, SynthParams, VoiceLatents};
+use linnet_tts::{Error, Linnet, Session, SynthParams, VoiceLatents, VoiceState};
 
 pub use linnet_tts::c_api::{
     LINNET_ERR_FORMAT, LINNET_ERR_INTERNAL, LINNET_ERR_INVALID_ARG, LINNET_ERR_IO, LINNET_ERR_SHAPE,
@@ -43,9 +43,27 @@ pub struct ModelHandle {
     model: Arc<Linnet>,
 }
 
-/// Voice handle.
+/// Voice handle: the latents plus, after `voicePrepare`, the trunk state
+/// of the voice prefix for one model.
 pub struct VoiceHandle {
     voice: Arc<VoiceLatents>,
+    state: Mutex<Option<VoiceState>>,
+}
+
+impl VoiceHandle {
+    pub fn new(voice: VoiceLatents) -> Self {
+        VoiceHandle { voice: Arc::new(voice), state: Mutex::new(None) }
+    }
+
+    /// A session for `m`: from the prepared state when it is `m`'s, else
+    /// from the latents (the audio is the same either way).
+    pub fn session<'m>(&self, m: &'m Linnet, params: SynthParams) -> Result<Session<'m>, Error> {
+        let st = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        match st.as_ref() {
+            Some(s) if s.is_for(m) => Session::with_voice_state(m, s, params),
+            _ => Session::new(m, &self.voice, params),
+        }
+    }
 }
 
 /// Session handle. Field order matters: `session` borrows the `Linnet`
@@ -59,12 +77,12 @@ pub struct SessionHandle {
 
 impl SessionHandle {
     /// Create a session that keeps the model alive for its own lifetime.
-    pub fn new(model: Arc<Linnet>, voice: &VoiceLatents, params: SynthParams) -> Result<Self, Error> {
+    pub fn new(model: Arc<Linnet>, voice: &VoiceHandle, params: SynthParams) -> Result<Self, Error> {
         // SAFETY: `model` is heap-allocated behind an `Arc` owned by this
         // struct and dropped only after `session`, so the reference stays
         // valid for the session's whole life.
         let m: &'static Linnet = unsafe { &*Arc::as_ptr(&model) };
-        let session = Session::new(m, voice, params)?;
+        let session = voice.session(m, params)?;
         Ok(SessionHandle { session, model })
     }
 }
@@ -339,7 +357,10 @@ pub unsafe extern "system" fn Java_com_voxrt_linnet_LinnetNative_synthesize<'l>(
                 return JFloatArray::default();
             }
         };
-        match m.model.synthesize(&t, &v.voice, params) {
+        match v.session(&m.model, params).and_then(|mut s| {
+            s.prime(&t)?;
+            Ok(s.collect())
+        }) {
             Ok(pcm) => vec_to_floats(env, &pcm),
             Err(e) => {
                 throw_error(env, &e);
@@ -359,7 +380,7 @@ pub extern "system" fn Java_com_voxrt_linnet_LinnetNative_voiceLoad<'l>(mut env:
             return 0;
         };
         match VoiceLatents::load(p) {
-            Ok(v) => into_handle(VoiceHandle { voice: Arc::new(v) }),
+            Ok(v) => into_handle(VoiceHandle::new(v)),
             Err(e) => {
                 throw_error(env, &e);
                 0
@@ -375,7 +396,7 @@ pub extern "system" fn Java_com_voxrt_linnet_LinnetNative_voiceFromNpy<'l>(mut e
             return 0;
         };
         match VoiceLatents::from_npy_bytes(&b) {
-            Ok(v) => into_handle(VoiceHandle { voice: Arc::new(v) }),
+            Ok(v) => into_handle(VoiceHandle::new(v)),
             Err(e) => {
                 throw_error(env, &e);
                 0
@@ -404,7 +425,7 @@ pub extern "system" fn Java_com_voxrt_linnet_LinnetNative_voiceFromLatents<'l>(
             return 0;
         }
         match VoiceLatents::from_vec(data, dim as usize) {
-            Ok(v) => into_handle(VoiceHandle { voice: Arc::new(v) }),
+            Ok(v) => into_handle(VoiceHandle::new(v)),
             Err(e) => {
                 throw_error(env, &e);
                 0
@@ -416,6 +437,33 @@ pub extern "system" fn Java_com_voxrt_linnet_LinnetNative_voiceFromLatents<'l>(
 #[no_mangle]
 pub unsafe extern "system" fn Java_com_voxrt_linnet_LinnetNative_voiceFree(_env: JNIEnv, _this: JObject, voice: jlong) {
     free_handle::<VoiceHandle>(voice);
+}
+
+/// Run the voice through the model once and keep the result in the voice
+/// handle, so that sessions created from it for that model skip the voice
+/// part of the prime pass. Tied to the model; preparing again replaces the
+/// state.
+#[no_mangle]
+pub unsafe extern "system" fn Java_com_voxrt_linnet_LinnetNative_voicePrepare(mut env: JNIEnv, _this: JObject, model: jlong, voice: jlong) {
+    guarded(&mut env, (), |env| {
+        let (Some(m), Some(v)) = (handle_ref::<ModelHandle>(model), handle_ref::<VoiceHandle>(voice)) else {
+            throw_invalid(env, "model or voice is closed");
+            return;
+        };
+        match m.model.voice_state(&v.voice) {
+            Ok(s) => *v.state.lock().unwrap_or_else(|e| e.into_inner()) = Some(s),
+            Err(e) => throw_error(env, &e),
+        }
+    })
+}
+
+/// True when `voicePrepare` ran for this model.
+#[no_mangle]
+pub unsafe extern "system" fn Java_com_voxrt_linnet_LinnetNative_voiceIsPrepared(_env: JNIEnv, _this: JObject, model: jlong, voice: jlong) -> jboolean {
+    let (Some(m), Some(v)) = (handle_ref::<ModelHandle>(model), handle_ref::<VoiceHandle>(voice)) else {
+        return 0;
+    };
+    v.state.lock().unwrap_or_else(|e| e.into_inner()).as_ref().is_some_and(|s| s.is_for(&m.model)) as jboolean
 }
 
 #[no_mangle]
@@ -467,7 +515,7 @@ pub unsafe extern "system" fn Java_com_voxrt_linnet_LinnetNative_sessionNew(
                 return 0;
             }
         };
-        match SessionHandle::new(Arc::clone(&m.model), &v.voice, params) {
+        match SessionHandle::new(Arc::clone(&m.model), v, params) {
             Ok(s) => into_handle(s),
             Err(e) => {
                 throw_error(env, &e);
@@ -588,9 +636,7 @@ mod tests {
 
     #[test]
     fn handles_round_trip_and_null_is_none() {
-        let h = into_handle(VoiceHandle {
-            voice: Arc::new(VoiceLatents::from_vec(vec![0.0; 96], 48).unwrap()),
-        });
+        let h = into_handle(VoiceHandle::new(VoiceLatents::from_vec(vec![0.0; 96], 48).unwrap()));
         assert_ne!(h, 0);
         unsafe {
             assert_eq!(handle_ref::<VoiceHandle>(h).unwrap().voice.frames(), 2);
@@ -629,9 +675,10 @@ mod tests {
         let offline = model.synthesize("Hello there.", &voice, SynthParams::default()).unwrap();
 
         let mh = into_handle(ModelHandle { model });
+        let vh = VoiceHandle::new(voice);
         let sh = unsafe {
             let m = handle_ref::<ModelHandle>(mh).unwrap();
-            into_handle(SessionHandle::new(Arc::clone(&m.model), &voice, SynthParams::default()).unwrap())
+            into_handle(SessionHandle::new(Arc::clone(&m.model), &vh, SynthParams::default()).unwrap())
         };
         unsafe { free_handle::<ModelHandle>(mh) };
 
@@ -649,5 +696,44 @@ mod tests {
         assert_eq!(streamed.len(), offline.len());
         assert_eq!(streamed, offline);
         unsafe { free_handle::<SessionHandle>(sh) };
+    }
+}
+
+#[cfg(test)]
+mod prepared_voice {
+    use super::*;
+
+    fn assets() -> Option<(String, String, String)> {
+        let dir = std::env::var("LINNET_ASSETS").unwrap_or_else(|_| format!("{}/../../../local", env!("CARGO_MANIFEST_DIR")));
+        let w = format!("{dir}/linnet-en-35m.fp16.safetensors");
+        let t = format!("{dir}/tokenizer.model");
+        let v = format!("{dir}/voices/linnet-en-f1.npy");
+        [&w, &t, &v].iter().all(|p| std::path::Path::new(p).exists()).then_some((w, t, v))
+    }
+
+    /// A prepared voice gives the same audio as an unprepared one, through
+    /// both the session and the one-shot path, and belongs to its model.
+    #[test]
+    fn prepared_voice_matches_unprepared() {
+        let Some((w, t, v)) = assets() else {
+            eprintln!("model assets not found, skipping");
+            return;
+        };
+        let model = Arc::new(Linnet::load(&w, &t).unwrap());
+        let vh = VoiceHandle::new(VoiceLatents::load(&v).unwrap());
+        let params = SynthParams { max_frames: 8, ..SynthParams::default() };
+        let plain = model.synthesize("Hello there.", &vh.voice, params).unwrap();
+        *vh.state.lock().unwrap() = Some(model.voice_state(&vh.voice).unwrap());
+        assert!(vh.state.lock().unwrap().as_ref().unwrap().is_for(&model));
+        let mut s = vh.session(&model, params).unwrap();
+        assert!(s.voice_kept());
+        s.prime("Hello there.").unwrap();
+        assert_eq!(s.collect(), plain);
+        // Another model falls back to the latents.
+        let other = Arc::new(Linnet::load(&w, &t).unwrap());
+        let mut s = vh.session(&other, params).unwrap();
+        assert!(!s.voice_kept());
+        s.prime("Hello there.").unwrap();
+        assert_eq!(s.collect(), plain);
     }
 }

@@ -133,8 +133,13 @@ fn run_with_noise(model: &Linnet, voice: &VoiceLatents, g: &Golden) -> Run {
 }
 
 fn run_with_noise_params(model: &Linnet, voice: &VoiceLatents, g: &Golden, params: SynthParams) -> Run {
-    let ld = model.latent_dim();
     let mut s = Session::new(model, voice, params).unwrap();
+    drive_with_noise(&mut s, g)
+}
+
+/// Prime `s` with the golden's text and step it with the golden noise.
+fn drive_with_noise(s: &mut Session, g: &Golden) -> Run {
+    let ld = s.latent().len();
     s.prime(&g.text).unwrap();
     let mut latents = Vec::new();
     let mut wav = Vec::new();
@@ -356,4 +361,98 @@ fn seeded_sessions_are_deterministic_and_offline_equals_stream() {
         .synthesize("Hello there.", &voice, SynthParams { cfg: 1.0, max_frames: 3, ..params })
         .unwrap();
     assert_eq!(c.len(), 3 * model.samples_per_step());
+}
+
+/// Keeping the voice prefix across utterances (re-priming one session)
+/// and starting a session from a `VoiceState` must not change a single
+/// bit against a fresh single-threaded session per utterance: for either
+/// weight precision, the re-prime sequences at one and four threads
+/// (shortest text first, so the KV cache grows around the kept prefix),
+/// `synthesize_with_state` with and without guidance at one and four
+/// threads, and a re-prime after an utterance that hit `max_frames`. A
+/// failed re-prime must leave the session unprimed, not steppable on the
+/// old state.
+#[test]
+fn kept_voice_prefix_is_bit_exact() {
+    let (Some(t), Some(v)) = (tokenizer(), voice()) else { return };
+    let voice = VoiceLatents::load(v).unwrap();
+    let bits = |v: &[f32]| v.iter().map(|x| x.to_bits()).collect::<Vec<_>>();
+    let gs = goldens();
+    assert!(gs.len() >= 2, "need two goldens of different length");
+    let params = gs[0].params;
+    for w in [weights_fp16(), weights()].into_iter().flatten() {
+        let model = Linnet::load(&w, &t).unwrap();
+        let state = model.voice_state(&voice).unwrap();
+        assert_eq!(state.frames(), voice.frames());
+        assert_eq!(state.dim(), voice.dim());
+        assert_eq!(state.prefix_len(), 1 + voice.frames());
+        let base: Vec<Run> = gs.iter().map(|g| run_with_noise_params(&model, &voice, g, params)).collect();
+        let check = |r: &Run, b: &Run, what: &str| {
+            assert_eq!(r.n_steps, b.n_steps, "{what}: step count ({})", w.display());
+            assert_eq!(bits(&r.latents), bits(&b.latents), "{what}: latents ({})", w.display());
+            assert_eq!(bits(&r.wav), bits(&b.wav), "{what}: wav ({})", w.display());
+        };
+
+        // A session per utterance, started from the voice state.
+        for (g, b) in gs.iter().zip(&base) {
+            let mut s = Session::with_voice_state(&model, &state, params).unwrap();
+            assert!(s.voice_kept());
+            let r = drive_with_noise(&mut s, g);
+            check(&r, b, &format!("{}: from voice state", g.name));
+        }
+
+        // One session re-primed over every golden, shortest first so the
+        // cache grows under the kept prefix, then the first one again; at
+        // one and at four threads, from the latents and from a voice state.
+        let mut order: Vec<usize> = (0..gs.len()).collect();
+        order.sort_by_key(|&i| gs[i].tokens.len());
+        order.push(order[0]);
+        for threads in [1usize, 4] {
+            let p = SynthParams { threads, ..params };
+            let mut s = Session::new(&model, &voice, p).unwrap();
+            assert!(!s.voice_kept());
+            for (k, &i) in order.iter().enumerate() {
+                let r = drive_with_noise(&mut s, &gs[i]);
+                assert!(s.voice_kept());
+                check(&r, &base[i], &format!("{}: re-prime #{k}, {threads} threads", gs[i].name));
+            }
+            let mut s = Session::with_voice_state(&model, &state, p).unwrap();
+            for (k, &i) in order.iter().enumerate() {
+                let r = drive_with_noise(&mut s, &gs[i]);
+                check(&r, &base[i], &format!("{}: re-prime from voice state #{k}, {threads} threads", gs[i].name));
+            }
+        }
+
+        // A re-prime that fails (token id outside the table) leaves the
+        // session unprimed; the next good prime works as usual.
+        let mut s = Session::new(&model, &voice, params).unwrap();
+        let r0 = drive_with_noise(&mut s, &gs[order[0]]);
+        assert!(s.prime_tokens(&[7000]).is_err());
+        assert!(s.step().is_none(), "a failed prime must not leave the old utterance steppable");
+        let r1 = drive_with_noise(&mut s, &gs[order[0]]);
+        check(&r1, &r0, "re-prime after a failed prime");
+
+        // Without guidance (one stream) and on four threads.
+        for p in [
+            SynthParams { cfg: 1.0, max_frames: 4, seed: 5, ..SynthParams::default() },
+            SynthParams { max_frames: 4, seed: 5, threads: 1, ..SynthParams::default() },
+        ] {
+            let a = model.synthesize("Hello there.", &voice, p).unwrap();
+            let b = model.synthesize_with_state("Hello there.", &state, p).unwrap();
+            assert_eq!(bits(&a), bits(&b), "cfg {} synthesize_with_state", p.cfg);
+            let c = model.synthesize_with_state("Hello there.", &state, SynthParams { threads: 4, ..p }).unwrap();
+            assert_eq!(bits(&a), bits(&c), "cfg {} four threads from voice state", p.cfg);
+            let mut s = Session::new(&model, &voice, p).unwrap();
+            s.prime("The meeting starts at nine.").unwrap();
+            let _ = s.collect();
+            s.prime("Hello there.").unwrap();
+            assert_eq!(bits(&a), bits(&s.collect()), "cfg {} re-prime", p.cfg);
+        }
+
+        // A state belongs to the model that computed it.
+        let other = Linnet::load(&w, &t).unwrap();
+        assert!(Session::with_voice_state(&other, &state, params).is_err());
+        assert!(Session::with_voice_state(&model, &other.voice_state(&voice).unwrap(), params).is_err());
+        println!("kept voice prefix: bit-exact on {}", w.display());
+    }
 }

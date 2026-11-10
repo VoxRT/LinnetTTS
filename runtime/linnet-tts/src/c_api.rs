@@ -5,9 +5,11 @@
 //! Ownership: every `*_load` / `*_new` returns a handle that the matching
 //! `*_free` releases; the library never hands out memory the caller must
 //! free. A session keeps a pointer to the model it was created from; the
-//! model must outlive the session. Handles are not thread-safe
-//! individually; distinct handles may be used from different threads, and
-//! one model may serve any number of sessions concurrently.
+//! model must outlive the session. A session handle is single-threaded;
+//! distinct handles may be used from different threads, one model may
+//! serve any number of sessions concurrently, and a voice may be prepared
+//! (`linnet_voice_prepare`, which replaces its state under a lock) while
+//! other threads create sessions from it.
 //!
 //! Panics never cross the boundary: each fallible entry point catches
 //! them and returns `LINNET_ERR_INTERNAL`. The message of the most recent error on
@@ -20,9 +22,10 @@ use core::ffi::{c_char, c_int};
 use std::cell::RefCell;
 use std::ffi::{CStr, CString};
 use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::sync::Mutex;
 
 use crate::error::Error;
-use crate::session::{Linnet, Session, SynthParams};
+use crate::session::{Linnet, Session, SynthParams, VoiceState};
 use crate::voice::VoiceLatents;
 
 pub const LINNET_OK: c_int = 0;
@@ -55,9 +58,27 @@ pub struct linnet_model {
     inner: Linnet,
 }
 
-/// Opaque voice handle.
+/// Opaque voice handle: the latents plus, after `linnet_voice_prepare`,
+/// the trunk state of the voice prefix for one model.
 pub struct linnet_voice {
     inner: VoiceLatents,
+    state: Mutex<Option<VoiceState>>,
+}
+
+impl linnet_voice {
+    fn new(inner: VoiceLatents) -> *mut linnet_voice {
+        Box::into_raw(Box::new(linnet_voice { inner, state: Mutex::new(None) }))
+    }
+
+    /// A session for `m`: from the prepared state when it is `m`'s, else
+    /// from the latents (the audio is the same either way).
+    fn session<'m>(&self, m: &'m Linnet, p: SynthParams) -> crate::error::Result<Session<'m>> {
+        let st = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        match st.as_ref() {
+            Some(s) if s.is_for(m) => Session::with_voice_state(m, s, p),
+            _ => Session::new(m, &self.inner, p),
+        }
+    }
 }
 
 /// Opaque session handle. The `'static` lifetime is a promise made by the
@@ -224,7 +245,7 @@ pub unsafe extern "C" fn linnet_voice_load(path: *const c_char, out_voice: *mut 
         }
         match VoiceLatents::load(p) {
             Ok(v) => {
-                *out_voice = Box::into_raw(Box::new(linnet_voice { inner: v }));
+                *out_voice = linnet_voice::new(v);
                 LINNET_OK
             }
             Err(e) => status_of(&e),
@@ -254,7 +275,7 @@ pub unsafe extern "C" fn linnet_voice_from_latents(
         let data = core::slice::from_raw_parts(latents, n).to_vec();
         match VoiceLatents::from_vec(data, dim) {
             Ok(v) => {
-                *out_voice = Box::into_raw(Box::new(linnet_voice { inner: v }));
+                *out_voice = linnet_voice::new(v);
                 LINNET_OK
             }
             Err(e) => status_of(&e),
@@ -270,8 +291,44 @@ pub unsafe extern "C" fn linnet_voice_free(voice: *mut linnet_voice) {
     }
 }
 
+/// Run the voice through `model` once ([`Linnet::voice_state`]) and keep
+/// the result in the voice handle, so that sessions created from it for
+/// that model (`linnet_session_new`, `linnet_synthesize`) skip the voice
+/// part of the prime pass; the first chunk then costs the text rows plus
+/// one step. The audio is identical. Tied to `model`: another model uses
+/// the voice unprepared. Preparing again replaces the state. Safe against
+/// concurrent session creation from the same voice.
+#[no_mangle]
+pub unsafe extern "C" fn linnet_voice_prepare(model: *const linnet_model, voice: *mut linnet_voice) -> c_int {
+    guard(|| {
+        if model.is_null() || voice.is_null() {
+            set_error("model or voice is null");
+            return LINNET_ERR_INVALID_ARG;
+        }
+        match (*model).inner.voice_state(&(*voice).inner) {
+            Ok(s) => {
+                *(*voice).state.lock().unwrap_or_else(|e| e.into_inner()) = Some(s);
+                LINNET_OK
+            }
+            Err(e) => status_of(&e),
+        }
+    })
+}
+
+/// 1 when `linnet_voice_prepare` ran for `model`, else 0 (also on null handles).
+#[no_mangle]
+pub unsafe extern "C" fn linnet_voice_is_prepared(model: *const linnet_model, voice: *const linnet_voice) -> c_int {
+    if model.is_null() || voice.is_null() {
+        return 0;
+    }
+    let st = (*voice).state.lock().unwrap_or_else(|e| e.into_inner());
+    st.as_ref().is_some_and(|s| s.is_for(&(*model).inner)) as c_int
+}
+
 /// Create a session for `voice`. `params` may be null (defaults). The
-/// model must stay alive until `linnet_session_free`.
+/// model must stay alive until `linnet_session_free`. A voice prepared for
+/// this model (`linnet_voice_prepare`) starts the session with the voice
+/// prefix in place.
 #[no_mangle]
 pub unsafe extern "C" fn linnet_session_new(
     model: *const linnet_model,
@@ -286,7 +343,7 @@ pub unsafe extern "C" fn linnet_session_new(
         }
         let m: &'static Linnet = &(*model).inner;
         let p = params_or_default(params, m);
-        match Session::new(m, &(*voice).inner, p) {
+        match (*voice).session(m, p) {
             Ok(s) => {
                 *out_session = Box::into_raw(Box::new(linnet_session { inner: s }));
                 LINNET_OK
@@ -305,7 +362,9 @@ pub unsafe extern "C" fn linnet_session_free(session: *mut linnet_session) {
 }
 
 /// Start an utterance: tokenize `text` (UTF-8, NUL-terminated) and run
-/// the prefix. May be called again on the same session for a new text.
+/// the prefix. May be called again on the same session for a new text;
+/// the voice part of the prefix is kept, so a re-prime runs only the
+/// text rows.
 #[no_mangle]
 pub unsafe extern "C" fn linnet_session_prime(session: *mut linnet_session, text: *const c_char) -> c_int {
     guard(|| {
@@ -382,7 +441,10 @@ pub unsafe extern "C" fn linnet_synthesize(
             return LINNET_ERR_INVALID_ARG;
         };
         let p = params_or_default(params, &(*model).inner);
-        let wav = match (*model).inner.synthesize(t, &(*voice).inner, p) {
+        let wav = match (*voice).session(&(*model).inner, p).and_then(|mut s| {
+            s.prime(t)?;
+            Ok(s.collect())
+        }) {
             Ok(w) => w,
             Err(e) => return status_of(&e),
         };

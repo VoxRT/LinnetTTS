@@ -1,6 +1,6 @@
 [package]
 name = "linnet-tts-py"
-version = "0.1.1"
+version = "0.2.0"
 edition = "2021"
 license = "Apache-2.0"
 repository = "https://github.com/VoxRT/LinnetTTS"
@@ -13,7 +13,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 linnet-tts = { path = "../../runtime/linnet-tts" }
-pyo3 = { version = "0.22", features = ["extension-module", "abi3-py39"] }
+pyo3 = { version = "0.30", features = ["extension-module", "abi3-py39"] }
 
 [profile.release]
 opt-level = 3

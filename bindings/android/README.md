@@ -27,7 +27,7 @@ model.session(voice, SynthParams(seed = 0)).use { session ->      // streaming, 
 |---|---|
 | `LinnetModel(weightsPath, tokenizerPath)`, `LinnetModel(File, File)`, `LinnetModel.fromBytes(weights, tokenizer)` | `Model(weights, tokenizer)` |
 | `.sampleRate`, `.samplesPerStep`, `.latentDim`, `.outputDelay`, `.tokenize(text)` | same |
-| `.loadVoice(path)`, `.voiceFromNpy(bytes)`, `Voice.fromLatents(FloatArray, frames, dim = 48)`, `Voice.load(path)`, `Voice.fromNpy(bytes)` | `model.load_voice`, `Voice.from_array`, `Voice.load` |
+| `.loadVoice(path)`, `.voiceFromNpy(bytes)` (both prepare the voice), `.prepare(voice)`, `.isPrepared(voice)`, `Voice.fromLatents(FloatArray, frames, dim = 48)`, `Voice.load(path)`, `Voice.fromNpy(bytes)` | `model.load_voice`, `prepare_voice`, `is_prepared`, `Voice.from_array`, `Voice.load` |
 | `.synthesize(text, voice, SynthParams(temp, cfg, maxFrames, eosThreshold, seed)): FloatArray` | `model.synthesize(...)` |
 | `.session(voice, params): LinnetSession` with `.prime(text)`, `.step(): FloatArray?`, `.stepInto(buf): Int`, `.chunks()`, `.frames`, `.finished`, `.latent()` | `model.session(...)`, `prime`, `step`, iteration, `frames`, `finished`, `latent` |
 | `LinnetException(code, message)` with the C API codes | `IOError` / `ValueError` |
@@ -37,11 +37,18 @@ Every class is `AutoCloseable`; use `use { }` or call `close()` (idempotent). Ch
 `samplesPerStep` (1920), the last one `outputDelay` (720) zeros, and the concatenation is sample for sample the
 result of `synthesize` with the same parameters and seed.
 
-**Threads.** `LinnetModel` and `Voice` are immutable: share them freely across threads and sessions. A
+**Prepared voices.** `loadVoice` and `voiceFromNpy` run the voice through the model once and keep the result in the
+`Voice`, so sessions created from it (and `synthesize`) skip the voice part of the prime pass: the first chunk then costs
+the text rows plus one step. `Voice.load` / `Voice.fromNpy` / `Voice.fromLatents` do not know the model; call
+`model.prepare(voice)` on those. Once per voice, 230–340 ms in the sample app on a Snapdragon 662 right after the model
+load (four threads), 2 MB per voice; the audio is identical. A re-primed session keeps the voice as well. See `bindings/README.md`, "Prepared voices".
+
+**Threads.** `LinnetModel` and `Voice` may be shared freely across threads and sessions: the model is
+immutable, and a voice changes only through `prepare`, which replaces its state under a lock. A
 `LinnetSession` is single-threaded (drive it from one thread at a time; different sessions may run in parallel).
 Nothing may be closed while another thread is still using it, but a session keeps the weights alive on its
 own, so closing the model before its sessions is safe. Loading (a few hundred ms) and synthesis belong off the
-main thread. `AudioTrackPlayer.write` blocks only when the 8 s track buffer is full, so a typical utterance is synthesised in
+main thread. `AudioTrackPlayer.write` copies the chunk into the player's 8 s queue (a thread feeds the 160 ms track from it) and blocks only when that queue is full, so a typical utterance is synthesised in
 one burst and playback drains behind it (see `bindings/README.md`, "Playback and step time", for why synthesis is not paced).
 
 **Memory.** The fp16 weights file is 83 MB and stays resident (about 85 MB; roughly twice that transiently while
@@ -108,13 +115,13 @@ The AAR `linnet-tts-<version>.aar` is attached to each GitHub release (no Maven 
 app, or build it here and publish it to the local Maven repository:
 
 ```sh
-./gradlew :linnet-tts:publishToMavenLocal     # com.voxrt.linnet:linnet-tts:0.1.1 in ~/.m2
+./gradlew :linnet-tts:publishToMavenLocal     # com.voxrt.linnet:linnet-tts:0.2.0 in ~/.m2
 ```
 
 ```kotlin
 // settings.gradle.kts: repositories { mavenLocal(); google(); mavenCentral() }
-dependencies { implementation("com.voxrt.linnet:linnet-tts:0.1.1") }
-// or: implementation(files("libs/linnet-tts-0.1.1.aar"))   // the release asset (a local build is linnet-tts-release.aar)
+dependencies { implementation("com.voxrt.linnet:linnet-tts:0.2.0") }
+// or: implementation(files("libs/linnet-tts-0.2.0.aar"))   // the release asset (a local build is linnet-tts-release.aar)
 ```
 
 The AAR carries `consumer-rules.pro`, so R8 in the app keeps `LinnetNative` (whose `external fun`s are instance
@@ -147,7 +154,21 @@ Sample app on a Snapdragon 662 (Redmi 9T), 7.0 s sentence, `threads` auto (4 big
 process is slower: 17-19 ms per step with a 55-70 ms worst step and 300-430 ms to the first chunk): 15.9-18.4 ms per step (RTF 20-23 %,
 steps over audio duration as the app computes it; the root README tables use step / 80 ms),
 worst step 33-39 ms, first chunk 244-260 ms after the Speak tap; the big-core affinity of the pool (see `bindings/README.md`, "Threads") is
-what brings the app close to the 14.3 ms of the command-line build.
+what brings the app close to the 14.3 ms of the command-line build. Those first-chunk figures are 0.1.x, with the voice part of
+the prefix recomputed in every prime; with a prepared voice (0.2) the same app shows prime 73–77 ms and first chunk 89–92 ms
+warm for a 44-character sentence (96 / 153 ms on the first utterance after launch), and the first sample reaches the speaker
+180–290 ms after the text (the fast mixer's start latency on this device; see "Playback timing" below).
+
+**Playback timing.** `AudioTrackPlayer.timing` records when the first chunk went through the output: the time it was
+handed to the track, the device-side onset and the end of the first chunk from `AudioTrack.getTimestamp`, and the
+mixer-side view from the playback head. `prewarm()` opens the route before the first chunk. Driving the sample with
+`adb shell "am start -n com.voxrt.linnet.sample/.MainActivity --es autospeak '<text>' --ez prewarm true --ei repeat 6"`
+logs both (`adb logcat -s linnet-sample`). Snapdragon 662, 44-character sentence, four threads, six runs: route opened by
+the first chunk — first chunk from the runtime 64–90 ms, handed to the track 118–165 ms (`play()` opens the route),
+first sample at the speaker 219–287 ms, first chunk fully played 269–337 ms; route prewarmed — first chunk 72–116 ms,
+handed over at once, first sample 180–277 ms, fully played 230–327 ms. The 65–110 ms between the hand-over and the sound
+is the fast mixer's start latency plus the output latency of the device, not a buffer of the player: the track holds
+160 ms and starts as soon as the first chunk is in.
 
 ## Tests
 

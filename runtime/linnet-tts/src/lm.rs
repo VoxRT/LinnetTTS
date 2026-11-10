@@ -40,6 +40,27 @@ pub struct TrunkState {
     layers: Vec<LayerKv>,
     pos: usize,
     cap: usize,
+    nh: usize,
+    hw: usize,
+}
+
+/// The first `n` positions of a stream's KV cache, compact
+/// (`[n_heads × n × head_width]` per layer and tensor). What a
+/// [`crate::VoiceState`] keeps between utterances.
+#[derive(Clone)]
+pub(crate) struct PrefixKv {
+    /// `(k, v)` per layer.
+    layers: Vec<(Vec<f32>, Vec<f32>)>,
+    n: usize,
+    nh: usize,
+    hw: usize,
+}
+
+impl PrefixKv {
+    /// Positions held.
+    pub(crate) fn len(&self) -> usize {
+        self.n
+    }
 }
 
 impl TrunkState {
@@ -55,15 +76,88 @@ impl TrunkState {
                 .collect(),
             pos: 0,
             cap,
+            nh: cfg.n_heads,
+            hw: cfg.head_width(),
         }
     }
 
     /// Forget everything; the buffers are kept.
     pub fn reset(&mut self) {
+        self.truncate(0);
+    }
+
+    /// Forget the positions from `n` on (`n <= len()`); the first `n`
+    /// stay valid and the next write lands at position `n`.
+    pub fn truncate(&mut self, n: usize) {
+        assert!(n <= self.pos, "truncate({n}) beyond the {} positions written", self.pos);
         for l in &mut self.layers {
-            l.n = 0;
+            l.n = n;
         }
-        self.pos = 0;
+        self.pos = n;
+    }
+
+    /// Make room for `cap` positions, keeping the ones written so far.
+    /// A no-op when the capacity is already sufficient.
+    pub fn grow(&mut self, cap: usize) {
+        if cap <= self.cap {
+            return;
+        }
+        let (nh, hw, old) = (self.nh, self.hw, self.cap);
+        for l in &mut self.layers {
+            let mut k = vec![0.0; cap * nh * hw];
+            let mut v = vec![0.0; cap * nh * hw];
+            for hh in 0..nh {
+                let (src, dst, len) = (hh * old * hw, hh * cap * hw, l.n * hw);
+                k[dst..dst + len].copy_from_slice(&l.k[src..src + len]);
+                v[dst..dst + len].copy_from_slice(&l.v[src..src + len]);
+            }
+            l.k = k;
+            l.v = v;
+        }
+        self.cap = cap;
+    }
+
+    /// Compact copy of the first `n` positions (`n <= len()`).
+    pub(crate) fn export_prefix(&self, n: usize) -> PrefixKv {
+        assert!(n <= self.pos, "export_prefix({n}) beyond the {} positions written", self.pos);
+        let (nh, hw, cap) = (self.nh, self.hw, self.cap);
+        let layers = self
+            .layers
+            .iter()
+            .map(|l| {
+                let mut k = Vec::with_capacity(nh * n * hw);
+                let mut v = Vec::with_capacity(nh * n * hw);
+                for hh in 0..nh {
+                    let base = hh * cap * hw;
+                    k.extend_from_slice(&l.k[base..base + n * hw]);
+                    v.extend_from_slice(&l.v[base..base + n * hw]);
+                }
+                (k, v)
+            })
+            .collect();
+        PrefixKv { layers, n, nh, hw }
+    }
+
+    /// Overwrite positions `0..p.len()` with `p` and truncate to them:
+    /// afterwards the state is exactly what it was when `p` was exported.
+    pub(crate) fn import_prefix(&mut self, p: &PrefixKv) -> Result<()> {
+        if p.layers.len() != self.layers.len() || p.nh != self.nh || p.hw != self.hw {
+            return Err(Error::Invalid("prefix KV does not match the model".into()));
+        }
+        if p.n > self.cap {
+            return Err(Error::Invalid(format!("prefix KV of {} positions exceeds the capacity {}", p.n, self.cap)));
+        }
+        let (nh, hw, cap, n) = (self.nh, self.hw, self.cap, p.n);
+        for (l, (k, v)) in self.layers.iter_mut().zip(&p.layers) {
+            for hh in 0..nh {
+                let (src, dst, len) = (hh * n * hw, hh * cap * hw, n * hw);
+                l.k[dst..dst + len].copy_from_slice(&k[src..src + len]);
+                l.v[dst..dst + len].copy_from_slice(&v[src..src + len]);
+            }
+            l.n = n;
+        }
+        self.pos = n;
+        Ok(())
     }
 
     pub fn capacity(&self) -> usize {
@@ -234,15 +328,46 @@ impl FlowLm {
         if rows.len() != n * d {
             return Err(Error::Invalid("prefix buffer has the wrong size".into()));
         }
+        let (voice_rows, text_rows) = rows.split_at_mut((1 + tv) * d);
+        self.build_voice_rows(voice, voice_rows)?;
+        self.build_text_rows(tokens, text_rows)
+    }
+
+    /// The voice part of the prefix, `[bos_voice | voice_proj(voice)]`
+    /// (`(1 + frames) × d` rows). It does not depend on the text, so its
+    /// trunk state can be kept across utterances.
+    pub fn build_voice_rows(&self, voice: &[f32], rows: &mut [f32]) -> Result<()> {
+        let d = self.cfg.d_model;
+        let ld = self.cfg.latent_dim;
+        if voice.len() % ld != 0 {
+            return Err(Error::Invalid(format!(
+                "voice latents length {} not a multiple of {ld}",
+                voice.len()
+            )));
+        }
+        let tv = voice.len() / ld;
+        if rows.len() != (1 + tv) * d {
+            return Err(Error::Invalid("voice prefix buffer has the wrong size".into()));
+        }
         rows[..d].copy_from_slice(&self.w.bos_voice);
         for f in 0..tv {
             self.w
                 .voice_proj
                 .gemv(&voice[f * ld..(f + 1) * ld], &mut rows[(1 + f) * d..(2 + f) * d]);
         }
+        Ok(())
+    }
+
+    /// The text part of the prefix, `[embed(tokens) | latent_in(bos_latent)]`
+    /// (`(tokens + 1) × d` rows).
+    pub fn build_text_rows(&self, tokens: &[u32], rows: &mut [f32]) -> Result<()> {
+        let d = self.cfg.d_model;
+        let n = tokens.len() + 1;
+        if rows.len() != n * d {
+            return Err(Error::Invalid("text prefix buffer has the wrong size".into()));
+        }
         for (i, tok) in tokens.iter().enumerate() {
-            let r = 1 + tv + i;
-            self.embed_token(*tok, &mut rows[r * d..(r + 1) * d])?;
+            self.embed_token(*tok, &mut rows[i * d..(i + 1) * d])?;
         }
         let r = n - 1;
         self.w.latent_in.gemv(&self.w.bos_latent, &mut rows[r * d..(r + 1) * d]);
@@ -352,7 +477,13 @@ impl FlowLm {
                             *s *= scale;
                         }
                         // Causal: row r attends to keys 0..=n0+r; the rest is zeroed
-                        // so the value product sees no mask.
+                        // so the value product sees no mask. The zeros must stay
+                        // inert: `matmul_mm` accumulates over the keys in order from
+                        // zero, so trailing `0 · v` terms leave every sum unchanged
+                        // (`x + (±0.0) == x`), and the rows of a voice prefix come out
+                        // identical whether they are run alone (`Linnet::voice_state`)
+                        // or with the text behind them. A kernel that started from the
+                        // first term or masked with a non-zero value would break that.
                         let valid = n0 + r + 1;
                         ops::softmax_row_inplace(&mut row[..valid], 1, valid);
                         row[valid..].fill(0.0);

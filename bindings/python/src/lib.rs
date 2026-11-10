@@ -9,17 +9,16 @@
 //! Long-running calls (`load`, `prime`, `step`, `synthesize`) release the
 //! GIL, so one model may serve several sessions from several threads.
 
-// pyo3 0.22's #[pymethods] expansion trips `useless_conversion` on recent clippy; `is_multiple_of` needs Rust 1.87
-// and the crate's MSRV is 1.85.
-#![allow(clippy::useless_conversion, clippy::manual_is_multiple_of)]
+// `is_multiple_of` needs Rust 1.87 and the crate's MSRV is 1.85.
+#![allow(clippy::manual_is_multiple_of)]
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use pyo3::exceptions::{PyIOError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 
-use linnet_tts::{Error, Linnet, Session, SynthParams, VoiceLatents};
+use linnet_tts::{Error, Linnet, Session, SynthParams, VoiceLatents, VoiceState};
 
 fn to_py(e: Error) -> PyErr {
     match e {
@@ -30,7 +29,7 @@ fn to_py(e: Error) -> PyErr {
 }
 
 fn pcm_bytes<'py>(py: Python<'py>, pcm: &[f32]) -> Bound<'py, PyBytes> {
-    PyBytes::new_bound_with(py, pcm.len() * 4, |buf| {
+    PyBytes::new_with(py, pcm.len() * 4, |buf| {
         for (dst, s) in buf.chunks_exact_mut(4).zip(pcm) {
             dst.copy_from_slice(&s.to_le_bytes());
         }
@@ -64,7 +63,7 @@ impl PyModel {
     #[new]
     fn new(py: Python<'_>, weights_path: &str, tokenizer_path: &str) -> PyResult<Self> {
         let (w, t) = (weights_path.to_owned(), tokenizer_path.to_owned());
-        let model = py.allow_threads(move || Linnet::load(w, t)).map_err(to_py)?;
+        let model = py.detach(move || Linnet::load(w, t)).map_err(to_py)?;
         Ok(PyModel { inner: Arc::new(model) })
     }
 
@@ -109,10 +108,11 @@ impl PyModel {
         self.inner.set_threads(threads as usize)
     }
 
-    /// Load `[T, latent_dim]` float32 latents from a `.npy` file.
+    /// Load `[T, latent_dim]` float32 latents from a `.npy` file and prepare
+    /// the voice for this model (`prepare_voice`).
     fn load_voice(&self, py: Python<'_>, path: &str) -> PyResult<PyVoice> {
         let p = path.to_owned();
-        let v = py.allow_threads(move || VoiceLatents::load(p)).map_err(to_py)?;
+        let v = py.detach(move || VoiceLatents::load(p)).map_err(to_py)?;
         if v.dim() != self.inner.latent_dim() {
             return Err(PyValueError::new_err(format!(
                 "voice latents have width {}, the model expects {}",
@@ -120,7 +120,28 @@ impl PyModel {
                 self.inner.latent_dim()
             )));
         }
-        Ok(PyVoice { inner: Arc::new(v) })
+        let voice = PyVoice::wrap(v);
+        self.prepare_voice(py, &voice)?;
+        Ok(voice)
+    }
+
+    /// Run `voice` through the model once and keep the result in the voice,
+    /// so that sessions created from it for this model skip the voice part
+    /// of the prime pass (the first chunk then costs the text rows plus one
+    /// step). The audio is identical. Tied to this model instance (a voice
+    /// holds one state: preparing it for another model replaces it); about
+    /// 2 MB per voice.
+    fn prepare_voice(&self, py: Python<'_>, voice: &PyVoice) -> PyResult<()> {
+        let model = Arc::clone(&self.inner);
+        let latents = Arc::clone(&voice.inner);
+        let state = py.detach(move || model.voice_state(&latents)).map_err(to_py)?;
+        *voice.state.lock().unwrap_or_else(|e| e.into_inner()) = Some(state);
+        Ok(())
+    }
+
+    /// True when `prepare_voice` (or `load_voice`) ran for this model.
+    fn is_prepared(&self, voice: &PyVoice) -> bool {
+        voice.state.lock().unwrap_or_else(|e| e.into_inner()).as_ref().is_some_and(|s| s.is_for(&self.inner))
     }
 
     /// Whole utterance as little-endian float32 bytes.
@@ -140,10 +161,13 @@ impl PyModel {
     ) -> PyResult<Bound<'py, PyBytes>> {
         let params = params_from(temp, cfg, max_frames, eos_threshold, seed, threads)?;
         let model = Arc::clone(&self.inner);
-        let voice = Arc::clone(&voice.inner);
         let text = text.to_owned();
         let pcm = py
-            .allow_threads(move || model.synthesize(&text, &voice, params))
+            .detach(move || {
+                let mut s = voice.session_for(&model, params)?;
+                s.prime(&text)?;
+                Ok::<_, Error>(s.collect())
+            })
             .map_err(to_py)?;
         Ok(pcm_bytes(py, &pcm))
     }
@@ -166,7 +190,7 @@ impl PyModel {
             )));
         }
         let model = Arc::clone(&self.inner);
-        let pcm = py.allow_threads(move || model.decode(&lat)).map_err(to_py)?;
+        let pcm = py.detach(move || model.decode(&lat)).map_err(to_py)?;
         Ok(pcm_bytes(py, &pcm))
     }
 
@@ -184,7 +208,7 @@ impl PyModel {
         threads: u32,
     ) -> PyResult<PySession> {
         let params = params_from(temp, cfg, max_frames, eos_threshold, seed, threads)?;
-        PySession::create(Arc::clone(&self.inner), &voice.inner, params)
+        PySession::create(Arc::clone(&self.inner), voice, params)
     }
 
     fn __repr__(&self) -> String {
@@ -197,10 +221,28 @@ impl PyModel {
     }
 }
 
-/// Voice prompt latents.
+/// Voice prompt latents, plus the trunk state of the voice prefix for one
+/// model once `Model.prepare_voice` ran.
 #[pyclass(name = "Voice", module = "linnet_tts._native", frozen)]
 pub struct PyVoice {
     inner: Arc<VoiceLatents>,
+    state: Mutex<Option<VoiceState>>,
+}
+
+impl PyVoice {
+    fn wrap(v: VoiceLatents) -> Self {
+        PyVoice { inner: Arc::new(v), state: Mutex::new(None) }
+    }
+
+    /// A session for `m`: from the prepared state when it is `m`'s, else
+    /// from the latents (the audio is the same either way).
+    fn session_for<'m>(&self, m: &'m Linnet, params: SynthParams) -> Result<Session<'m>, Error> {
+        let st = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        match st.as_ref() {
+            Some(s) if s.is_for(m) => Session::with_voice_state(m, s, params),
+            _ => Session::new(m, &self.inner, params),
+        }
+    }
 }
 
 #[pymethods]
@@ -220,15 +262,15 @@ impl PyVoice {
             .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
             .collect();
         let inner = VoiceLatents::from_vec(v, dim).map_err(to_py)?;
-        Ok(PyVoice { inner: Arc::new(inner) })
+        Ok(PyVoice::wrap(inner))
     }
 
     /// Load from a `.npy` file without checking the width against a model.
     #[staticmethod]
     fn load(py: Python<'_>, path: &str) -> PyResult<Self> {
         let p = path.to_owned();
-        let v = py.allow_threads(move || VoiceLatents::load(p)).map_err(to_py)?;
-        Ok(PyVoice { inner: Arc::new(v) })
+        let v = py.detach(move || VoiceLatents::load(p)).map_err(to_py)?;
+        Ok(PyVoice::wrap(v))
     }
 
     #[getter]
@@ -264,34 +306,35 @@ pub struct PySession {
 }
 
 impl PySession {
-    fn create(model: Arc<Linnet>, voice: &VoiceLatents, params: SynthParams) -> PyResult<Self> {
+    fn create(model: Arc<Linnet>, voice: &PyVoice, params: SynthParams) -> PyResult<Self> {
         // SAFETY: `model` is heap-allocated behind an `Arc` that this struct
         // owns and drops only after `session`; the reference therefore
         // stays valid for the session's whole life.
         let m: &'static Linnet = unsafe { &*Arc::as_ptr(&model) };
-        let session = Session::new(m, voice, params).map_err(to_py)?;
+        let session = voice.session_for(m, params).map_err(to_py)?;
         Ok(PySession { session, model })
     }
 }
 
 #[pymethods]
 impl PySession {
-    /// Tokenize `text` and run the prefix. Resets any previous utterance.
+    /// Tokenize `text` and run the prefix. Resets any previous utterance;
+    /// the voice part of the prefix is kept, so only the text rows run.
     fn prime(&mut self, py: Python<'_>, text: &str) -> PyResult<()> {
         let s = &mut self.session;
-        py.allow_threads(move || s.prime(text)).map_err(to_py)
+        py.detach(move || s.prime(text)).map_err(to_py)
     }
 
     /// Run the prefix from ready-made token ids.
     fn prime_tokens(&mut self, py: Python<'_>, tokens: Vec<u32>) -> PyResult<()> {
         let s = &mut self.session;
-        py.allow_threads(move || s.prime_tokens(&tokens)).map_err(to_py)
+        py.detach(move || s.prime_tokens(&tokens)).map_err(to_py)
     }
 
     /// Next chunk as float32 LE bytes, or `None` once the utterance is over.
     fn step<'py>(&mut self, py: Python<'py>) -> Option<Bound<'py, PyBytes>> {
         let s = &mut self.session;
-        let chunk: Option<Vec<f32>> = py.allow_threads(move || s.step().map(|c| c.to_vec()));
+        let chunk: Option<Vec<f32>> = py.detach(move || s.step().map(|c| c.to_vec()));
         chunk.map(|c| pcm_bytes(py, &c))
     }
 

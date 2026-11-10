@@ -1,10 +1,13 @@
 import CLinnetTTS
 import Foundation
 
-/// Voice prompt latents, a `[frames, dim]` Float32 matrix (dim = 48 for linnet-en-35m).
+/// Voice prompt latents, a `[frames, dim]` Float32 matrix (dim = 48 for linnet-en-35m), plus, once
+/// ``LinnetModel/prepare(voice:)`` (or ``LinnetModel/loadVoice(path:)``) ran, the prepared state of the
+/// voice for that model.
 ///
-/// Immutable and thread-safe once created. A session copies the latents at creation and keeps
-/// a reference to the voice, so the voice may be dropped at any time.
+/// Thread-safe: the latents never change, `prepare` replaces the state under a lock in the runtime,
+/// and a session copies what it needs at creation and keeps a reference to the voice, so the voice
+/// may be shared and dropped at any time.
 public final class Voice: @unchecked Sendable {
     let handle: OpaquePointer
     /// Number of 80 ms frames.

@@ -30,6 +30,19 @@ model owns one persistent worker pool; the parameter of a session (`SynthParams.
 with every reduction kept on one thread, so **the audio is bit-identical for every thread count**; only the
 speed changes (see `docs/streaming-contract.md`).
 
+**Prepared voices.** The voice part of the prefix (`[bos_voice | voice]`, 77 positions for the built-in voices) does not
+depend on the text, so its trunk state is computed once per voice and model and reused: `loadVoice` / `load_voice` /
+`voiceFromNpy` prepare the voice they return (Rust `Linnet::voice_state`, C `linnet_voice_prepare`, Python
+`Model.prepare_voice`, Kotlin `LinnetModel.prepare`, Swift `LinnetModel.prepare(voice:)` for voices built from latents or
+loaded without a model), and every session created from a prepared voice, as well as every re-prime of an existing
+session, runs only the text rows of the prime pass. The audio is bit-identical either way. Preparation costs about one
+prime pass over the voice (66 ms on one Core i9 core, 39 ms on an Apple M5 core, 230–340 ms in the Android sample app on
+a Snapdragon 662 right after the model load, four threads) and keeps about 2 MB per voice in memory; it is tied to the
+model instance that computed it (another model uses the voice unprepared, and preparing the voice for another model
+replaces the state). The runtime never writes the state to disk and has no export call; a product that adds one may
+store its own copy under the written permission in `WEIGHTS_PERMISSIONS.md`. On one i9 core a 44-character sentence then primes in 14 ms instead of 67 ms (99 characters:
+21 instead of 79; 321 characters: 77 instead of 139), and the first chunk follows about 8 ms later.
+
 On Android the runtime also pins its threads to the big cluster: the pool workers for good, and the thread that calls
 `prime`, `step` or `decode` only for the duration of that call (its previous affinity mask is restored afterwards).
 Without this the scheduler keeps the short bursts of a synthesis on the little cores and migrates them up slowly; the
@@ -62,7 +75,8 @@ builds it with cargo-zigbuild against glibc 2.17 as well, which is what the rele
 kernels pick AVX2+FMA at run time; no `-C target-cpu` is used.
 
 Examples (`bindings/linux/examples/`): `synth.c` writes a sentence to a 16-bit WAV with `linnet_synthesize`;
-`stream.c` drives `linnet_session_*` chunk by chunk and reports time to first audio and the worst step.
+`stream.c` prepares the voice (`linnet_voice_prepare`, once per voice), drives `linnet_session_*` chunk by chunk and reports
+the preparation time, time to first audio and the worst step.
 
 ```sh
 cd bindings/linux/examples

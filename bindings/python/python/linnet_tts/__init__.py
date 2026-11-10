@@ -43,7 +43,8 @@ def _threads(threads: int) -> int:
     return t
 
 class Voice:
-    """Voice prompt latents: a ``[frames, dim]`` float32 matrix."""
+    """Voice prompt latents, a ``[frames, dim]`` float32 matrix, plus the prepared state for one model
+    once ``Model.prepare_voice`` (or ``Model.load_voice``) ran. Shareable between threads and sessions."""
 
     __slots__ = ("_v",)
 
@@ -97,7 +98,11 @@ class Session:
         self._s = native
 
     def prime(self, text: str) -> "Session":
-        """Tokenize ``text`` and run the prefix. Resets any previous utterance."""
+        """Tokenize ``text`` and run the prefix. Resets any previous utterance.
+
+        The voice part of the prefix stays in the session from its first prime
+        (or from a prepared voice), so a re-prime runs only the text rows.
+        """
         self._s.prime(text)
         return self
 
@@ -179,8 +184,27 @@ class Model:
         self._m.set_threads(_threads(threads))
 
     def load_voice(self, path: _PathLike) -> Voice:
-        """Load a ``.npy`` voice file and check its width against the model."""
+        """Load a ``.npy`` voice file, check its width against the model and prepare it (``prepare_voice``)."""
         return Voice(self._m.load_voice(os.fspath(path)))
+
+    def prepare_voice(self, voice: Voice) -> Voice:
+        """Run ``voice`` through the model once and keep the result in the voice.
+
+        Sessions created from it for this model (``session``, ``synthesize``) then
+        skip the voice part of the prime pass: the first chunk costs the text rows
+        plus one step instead of the whole prefix. The audio is identical. The
+        state is tied to this model instance (about 2 MB per voice): a voice holds
+        one state, so preparing it for another model replaces the state and the
+        first model falls back to the latents. ``load_voice`` does this for you
+        (and therefore runs the model), ``Voice.load`` and ``Voice.from_array``
+        do not.
+        """
+        self._m.prepare_voice(voice._v)
+        return voice
+
+    def is_prepared(self, voice: Voice) -> bool:
+        """True when ``voice`` was prepared for this model."""
+        return self._m.is_prepared(voice._v)
 
     def synthesize(
         self,

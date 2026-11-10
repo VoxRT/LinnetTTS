@@ -55,16 +55,34 @@ public final class LinnetModel: @unchecked Sendable {
         }
     }
 
-    /// Load `[T, 48]` latents from a NumPy `.npy` file.
+    /// Load `[T, 48]` latents from a NumPy `.npy` file and ``prepare(voice:)`` them for this model.
     public func loadVoice(path: String) throws -> Voice {
         let v = try Voice.load(path: path)
         if v.dim != latentDim {
             throw LinnetError.invalidArgument("voice latents have width \(v.dim), the model expects \(latentDim)")
         }
+        try prepare(voice: v)
         return v
     }
 
     public func loadVoice(url: URL) throws -> Voice { try loadVoice(path: url.path) }
+
+    /// Run `voice` through the model once and keep the result in the voice, so that sessions
+    /// created from it for this model (``session(voice:params:)``, ``synthesize(text:voice:params:)``)
+    /// skip the voice part of the prime pass: the first chunk then costs the text rows plus one
+    /// step instead of the whole prefix. The audio is identical. Costs about one prime pass over
+    /// the voice, keeps about 2 MB per voice, and is tied to this model instance: a voice holds one
+    /// state, so preparing it for another model replaces the state and the first model falls back
+    /// to the latents. ``loadVoice(path:)`` calls it for you (and therefore runs the model),
+    /// ``Voice/init(latents:frames:dim:)`` and ``Voice/load(path:)`` do not.
+    public func prepare(voice: Voice) throws {
+        try check(linnet_voice_prepare(handle, voice.handle))
+    }
+
+    /// True when `voice` was prepared for this model.
+    public func isPrepared(voice: Voice) -> Bool {
+        linnet_voice_is_prepared(handle, voice.handle) != 0
+    }
 
     /// Whole utterance in one call. Blocks for the full synthesis; the result is
     /// `steps * samplesPerStep` samples and equals the concatenation of the chunks a

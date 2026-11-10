@@ -4,6 +4,52 @@ All notable changes to this project are documented in this file. The format foll
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/).
 Code releases are tagged `vX.Y.Z`; model weights are released separately as `weights-vN` (see `README.md`, "Weights").
 
+## [0.2.0] - 2026-11-10
+
+### Added
+
+- Cached voice state: the trunk state of the voice prefix is computed once per voice and model and reused, so a prime
+  pass runs only the text rows. A session keeps the voice from its first prime on (re-priming is cheaper), and a
+  *prepared voice* gives new sessions the same head start: Rust `Linnet::voice_state` + `Session::with_voice_state`
+  (+ `Linnet::synthesize_with_state`, `Session::collect`, `Session::voice_kept`), C `linnet_voice_prepare` /
+  `linnet_voice_is_prepared`, Python `Model.prepare_voice` / `is_prepared`, Kotlin `LinnetModel.prepare` / `isPrepared`,
+  Swift `LinnetModel.prepare(voice:)` / `isPrepared(voice:)`; `load_voice` / `loadVoice` / `voiceFromNpy` prepare the
+  voice they return. New public types and methods in Rust: `VoiceState` (`frames`, `dim`, `prefix_len`, `is_for`),
+  `FlowLm::build_voice_rows` / `build_text_rows`, `TrunkState::truncate` / `grow`. The audio is bit-identical to a full
+  prime pass, hence to 0.1.x (the golden vectors are unchanged; `kept_voice_prefix_is_bit_exact` in
+  `runtime/linnet-tts/tests/golden.rs` checks fp16 and fp32, with and without guidance, one and four threads). One Core
+  i9 core, 44-character sentence: prime 14 ms instead of 67 ms, first audio 22 ms instead of 75 ms; preparation 66 ms
+  once per voice, about 2 MB per voice in memory. Behaviour change for existing users: `load_voice` / `loadVoice` /
+  `voiceFromNpy` now run one prime pass over the voice (tens of milliseconds, off the main thread like the model load)
+  and can fail for that reason; `Voice.load` plus an explicit `prepare` keeps the old split.
+- `stream.c` prepares the voice and prints the preparation time; the sample apps log the weights and voice load times
+  separately.
+- `bindings/ios/device-smoke.sh` passes the sample's arguments after `--` (devicectl took `-autospeak` as its own
+  flag and the launches failed silently) and keeps the continuation lines of the app's log.
+- `WEIGHTS_PERMISSIONS.md`: written permissions under Section 15.2 of the weights license, starting with one that lets a
+  product store a prepared voice state on its own device or server.
+
+### Fixed
+
+- Android `AudioTrackPlayer` played nothing on a Snapdragon 662 (Redmi 9T) and most likely on other Qualcomm devices:
+  its 8 s track buffer made the audio policy route the track to a "direct PCM" output that waits for the whole buffer
+  to fill, so a short utterance never started and `drain()` returned after its 150 ms no-progress timeout (the 0.1.1
+  `drain()` change was a symptom of this). The track is now about 160 ms, asks for the low-latency performance mode
+  and runs on the mixer's fast path; the 8 s queue lives in the player and is fed by a thread, so `write()` still
+  returns without pacing the synthesis. Consequences for callers: `write()` copies the chunk (the caller may reuse
+  its buffer at once); a failure of the track surfaces at the next `write()` or `drain()` as an `IllegalStateException`
+  with the original error as its cause, rather than from the `write()` that hit it; `write()` after `close()` throws;
+  `stopNow()` pauses the track at once and the feeder thread flushes it.
+
+### Changed
+
+- `AudioTrackPlayer.timing` / `LinnetPlayer.timing` report when the first chunk reached the output (onset, first
+  chunk fully played), and `prewarm()` opens the output route before the first chunk; the sample apps take
+  `prewarm` (Android: intent extras `autospeak`, `prewarm`, `repeat`; iOS: `-prewarm`) and log the figures.
+- Python extension built on pyo3 0.30 (was 0.22.6, the version of three Dependabot advisories that the extension did not
+  exercise; issue #2). Same API, same `abi3-py39` wheel; the extension releases the GIL around `load`, `load_voice`,
+  `prepare_voice`, `prime`, `step`, `synthesize` and `decode`, as 0.1 did for the calls that existed.
+
 ## [0.1.1] - 2026-11-04
 
 ### Fixed
@@ -63,5 +109,6 @@ codec with a Vocos-style decoder, ~41M parameters, 24 kHz, streaming).
 - Browser (WASM) and Node channels are deferred to a later release; the runtime keeps compiling for `wasm32-unknown-unknown`.
 - An int8 (W8A8) weight variant for weaker devices is planned as a separate weights file.
 
+[0.2.0]: https://github.com/VoxRT/LinnetTTS/releases/tag/v0.2.0
 [0.1.1]: https://github.com/VoxRT/LinnetTTS/releases/tag/v0.1.1
 [0.1.0]: https://github.com/VoxRT/LinnetTTS/releases/tag/v0.1.0
