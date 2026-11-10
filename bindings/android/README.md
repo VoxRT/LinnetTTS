@@ -48,7 +48,7 @@ immutable, and a voice changes only through `prepare`, which replaces its state 
 `LinnetSession` is single-threaded (drive it from one thread at a time; different sessions may run in parallel).
 Nothing may be closed while another thread is still using it, but a session keeps the weights alive on its
 own, so closing the model before its sessions is safe. Loading (a few hundred ms) and synthesis belong off the
-main thread. `AudioTrackPlayer.write` blocks only when the 8 s track buffer is full, so a typical utterance is synthesised in
+main thread. `AudioTrackPlayer.write` copies the chunk into the player's 8 s queue (a thread feeds the 160 ms track from it) and blocks only when that queue is full, so a typical utterance is synthesised in
 one burst and playback drains behind it (see `bindings/README.md`, "Playback and step time", for why synthesis is not paced).
 
 **Memory.** The fp16 weights file is 83 MB and stays resident (about 85 MB; roughly twice that transiently while

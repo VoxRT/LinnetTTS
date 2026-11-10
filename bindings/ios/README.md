@@ -31,7 +31,7 @@ player.drain()
 | `.session(voice:params:) -> LinnetSession`; `.prime(text:)`, `.step() -> [Float]?`, `.step(into:) -> Int`, `.remaining()`, `.finished`, `.chunksEmitted` | `session`, `prime`, `step`, `stepInto`, `chunks`, `finished` | `session`, `prime`, `step`, iteration, `finished` |
 | `SynthParams(temp:cfg:maxFrames:eosThreshold:seed:threads:)` | `SynthParams(...)` | keywords |
 | `LinnetError` (`.invalidArgument`, `.io`, `.format`, `.shape`, `.bufferTooSmall`, `.internalError`; `.code`, `.message`) | `LinnetException(code, message)` | `IOError` / `ValueError` |
-| `LinnetPlayer(sampleRate:bufferMillis:)`: `.write(_:)`, `.drain()`, `.stop()` | `AudioTrackPlayer` | - |
+| `LinnetPlayer(sampleRate:bufferMillis:)`: `.write(_:)`, `.drain()`, `.stop()`, `.prewarm()`, `.timing` | `AudioTrackPlayer` (`write`, `drain`, `stopNow`, `prewarm`, `timing`) | - |
 
 Not in the C API, hence not here: `tokenize`, `latent()`, `frames`. `outputDelay` (720) and `latentDim` (48) are
 constants of the streaming contract.

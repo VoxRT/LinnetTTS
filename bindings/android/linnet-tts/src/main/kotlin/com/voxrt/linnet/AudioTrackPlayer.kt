@@ -43,23 +43,28 @@ import android.os.Build
 class AudioTrackPlayer(private val sampleRate: Int, bufferMillis: Int = 8000) : AutoCloseable {
     /**
      * When the first chunk written through [write] went through the output, for latency measurements.
-     * Times are `System.nanoTime()` values. [onsetNanos] and [firstChunkPlayedNanos] are extrapolated from
+     * Times are `System.nanoTime()` values, filled in asynchronously while the chunk is queued and played.
+     * [onsetNanos] and [firstChunkPlayedNanos] are extrapolated from
      * the first [AudioTimestamp] the track reported (a frame position and the time it was presented at the
      * device), so they are only available once [timestampNanos] is set, which happens during playback;
      * [headPassedFirstFrameNanos] / [headPassedFirstChunkNanos] come from polling the playback head every
      * millisecond and are the mixer-side view, without the device's output latency.
      */
     class PlaybackTiming internal constructor(
-        /** `System.nanoTime()` when the first chunk was handed to the track (after `play()` opened the route). */
-        val firstWriteNanos: Long,
         /** Frame index of the first chunk's first sample (after any prewarm silence). */
         val firstFrame: Long,
         /** Samples in the first chunk. */
         val firstChunkFrames: Int,
-        /** `true` when the track was already playing before the first [write] ([prewarm]). */
+        /** `true` when the route was opened before this chunk ([prewarm], or a track still playing). */
         val routeWasOpen: Boolean,
         private val sampleRate: Int,
     ) {
+        /**
+         * `System.nanoTime()` just before the first chunk was handed to the track, after `play()` had opened the
+         * route; `-1` until the feeder thread gets there.
+         */
+        @Volatile var firstWriteNanos: Long = -1
+            internal set
         /** Frame position and presentation time of the first timestamp the track reported (`-1` so far). */
         @Volatile var timestampFrame: Long = -1
             internal set
@@ -86,16 +91,28 @@ class AudioTrackPlayer(private val sampleRate: Int, bufferMillis: Int = 8000) : 
     private val track: AudioTrack
     private val maxQueuedSamples = sampleRate.toLong() * bufferMillis.coerceAtLeast(1) / 1000
     private val lock = Object()
+    // Guarded by `lock`:
     private val queue = ArrayDeque<Item>()
     private var queuedSamples = 0L
     private var closed = false
     private var generation = 0
     private var framesWritten = 0L
-    private var started = false
+    private var prewarmed = false
+    private var firstRealPending = true
     private var feederError: Throwable? = null
+    /** The item the feeder is writing right now and the generation it belongs to. */
+    private var inFlightCount = 0L
+    private var inFlightGen = 0
+    // Owned by the feeder thread (the only one that drives the track's play/pause/flush/stop), except that
+    // `drain()` stops the track while the feeder is idle.
+    @Volatile
+    private var started = false
     private val feeder: Thread
 
-    /** Timing of the first chunk written through [write], or `null` before it. */
+    /**
+     * Timing of the most recent utterance's first chunk: set when that chunk is queued, filled in while it plays,
+     * and replaced by the next utterance's first chunk (after [drain] or [stopNow]). `null` before the first [write].
+     */
     @Volatile
     var timing: PlaybackTiming? = null
         private set
@@ -131,7 +148,11 @@ class AudioTrackPlayer(private val sampleRate: Int, bufferMillis: Int = 8000) : 
      */
     fun prewarm() = enqueue(FloatArray(sampleRate / 20), sampleRate / 20, real = false)
 
-    /** Queue [count] samples of [chunk]; blocks only while more than `bufferMillis` of audio is queued. */
+    /**
+     * Queue a copy of the first [count] samples of [chunk] (the caller may reuse its buffer); blocks only while
+     * more than `bufferMillis` of audio is queued. A failure of the track surfaces here or in [drain] as an
+     * [IllegalStateException] whose cause is the original error.
+     */
     @JvmOverloads
     fun write(chunk: FloatArray, count: Int = chunk.size) {
         if (count <= 0) return
@@ -140,56 +161,87 @@ class AudioTrackPlayer(private val sampleRate: Int, bufferMillis: Int = 8000) : 
 
     private fun enqueue(data: FloatArray, count: Int, real: Boolean) {
         synchronized(lock) {
-            while (!closed && queuedSamples > 0 && queuedSamples + count > maxQueuedSamples) lock.wait()
+            while (!closed && feederError == null && queuedSamples > 0 && queuedSamples + count > maxQueuedSamples) lock.wait()
             feederError?.let { throw IllegalStateException("AudioTrack feeder failed", it) }
             check(!closed) { "AudioTrackPlayer is closed" }
+            if (real && firstRealPending) {
+                firstRealPending = false
+                // The chunk starts after everything written, in flight or queued ahead of it (prewarm silence);
+                // an in-flight item of a stopped generation is being flushed and does not count.
+                val ahead = framesWritten + queue.sumOf { it.count.toLong() } + (if (inFlightGen == generation) inFlightCount else 0L)
+                timing = PlaybackTiming(ahead, count, prewarmed || started, sampleRate)
+            } else if (!real) {
+                prewarmed = true
+            }
             queue.addLast(Item(data, count, real))
             queuedSamples += count
             lock.notifyAll()
         }
     }
 
-    /** The feeder thread: hands queued chunks to the track, blocking on the track's small buffer. */
+    /** The feeder thread: owns the track's state, hands queued chunks to it, blocking on its small buffer. */
     private fun feed() {
-        while (true) {
-            val item: Item
-            val gen: Int
-            synchronized(lock) {
-                while (queue.isEmpty() && !closed) lock.wait()
-                if (closed && queue.isEmpty()) return
-                item = queue.removeFirst()
-                gen = generation
-            }
-            try {
-                val routeWasOpen = started
-                if (!started) {
-                    track.play()
-                    started = true
-                }
-                if (item.real && timing == null) {
-                    val t = PlaybackTiming(System.nanoTime(), framesWritten, item.count, routeWasOpen, sampleRate)
-                    timing = t
-                    pollHead(t)
-                }
-                var off = 0
-                while (off < item.count) {
-                    val n = track.write(item.data, off, item.count - off, AudioTrack.WRITE_BLOCKING)
-                    if (n < 0) throw IllegalStateException("AudioTrack.write failed: $n")
-                    if (n == 0) break // paused or stopped underneath us: drop the rest
-                    off += n
-                    synchronized(lock) { if (generation != gen) off = item.count }
-                }
-                pollTimestamp()
-            } catch (e: Throwable) {
-                synchronized(lock) { feederError = e; lock.notifyAll() }
-                return
-            } finally {
+        var trackGen = 0
+        try {
+            while (true) {
+                val item: Item
+                val gen: Int
                 synchronized(lock) {
-                    if (generation == gen) framesWritten += item.count
-                    queuedSamples -= item.count
-                    lock.notifyAll()
+                    while (queue.isEmpty() && !closed && generation == trackGen) lock.wait()
+                    gen = generation
+                    if (gen != trackGen) {
+                        // stopNow() happened: drop what the track still holds, start afresh on the next item.
+                        trackGen = gen
+                        item = Item(FloatArray(0), 0, false)
+                    } else {
+                        if (closed && queue.isEmpty()) return
+                        item = queue.removeFirst()
+                        inFlightCount = item.count.toLong()
+                        inFlightGen = gen
+                    }
+                }
+                if (item.count == 0) {
+                    if (started) {
+                        track.pause()
+                        track.flush()
+                        track.stop()
+                        started = false
+                    }
+                    continue
+                }
+                try {
+                    if (!started) {
+                        // Nothing may have stopped the track between here and play(): only this thread does.
+                        track.play()
+                        started = true
+                    }
+                    val t = timing
+                    if (item.real && t != null && t.firstWriteNanos < 0) {
+                        t.firstWriteNanos = System.nanoTime()
+                        pollHead(t)
+                    }
+                    var off = 0
+                    while (off < item.count) {
+                        val n = track.write(item.data, off, item.count - off, AudioTrack.WRITE_BLOCKING)
+                        if (n < 0) throw IllegalStateException("AudioTrack.write failed: $n")
+                        if (n == 0) break // paused underneath us (stopNow): drop the rest
+                        off += n
+                        synchronized(lock) { if (generation != gen) off = item.count }
+                    }
+                    pollTimestamp()
+                } finally {
+                    synchronized(lock) {
+                        if (generation == gen) framesWritten += item.count
+                        queuedSamples -= item.count
+                        inFlightCount = 0L
+                        lock.notifyAll()
+                    }
                 }
             }
+        } catch (_: InterruptedException) {
+            return
+        } catch (e: Throwable) {
+            synchronized(lock) { feederError = e; lock.notifyAll() }
         }
     }
 
@@ -198,6 +250,8 @@ class AudioTrackPlayer(private val sampleRate: Int, bufferMillis: Int = 8000) : 
         val end = t.firstFrame + t.firstChunkFrames
         Thread {
             val deadline = System.nanoTime() + 2_000_000_000L
+            var last = -1L
+            var stableSince = System.nanoTime()
             while (System.nanoTime() < deadline && t.headPassedFirstChunkNanos == null) {
                 val head = try {
                     track.playbackHeadPosition.toLong() and 0xffffffffL
@@ -207,6 +261,12 @@ class AudioTrackPlayer(private val sampleRate: Int, bufferMillis: Int = 8000) : 
                 val now = System.nanoTime()
                 if (t.headPassedFirstFrameNanos == null && head > t.firstFrame) t.headPassedFirstFrameNanos = now
                 if (head >= end) t.headPassedFirstChunkNanos = now
+                if (head != last) {
+                    last = head
+                    stableSince = now
+                } else if (t.headPassedFirstFrameNanos != null && now - stableSince > 500_000_000L) {
+                    return@Thread // stopped or flushed: nothing more to see
+                }
                 try { Thread.sleep(1) } catch (_: InterruptedException) { return@Thread }
             }
         }.apply { isDaemon = true; name = "linnet-head-poll" }.start()
@@ -226,7 +286,10 @@ class AudioTrackPlayer(private val sampleRate: Int, bufferMillis: Int = 8000) : 
         }
     }
 
-    /** Block until everything queued so far has been played, then stop. */
+    /**
+     * Block until everything queued so far has been played, then stop. Throws if the track failed meanwhile.
+     * The player can be used again afterwards; [timing] stays readable until the next utterance's first chunk.
+     */
     fun drain() {
         synchronized(lock) {
             while (queuedSamples > 0 && feederError == null && !closed) lock.wait()
@@ -239,7 +302,10 @@ class AudioTrackPlayer(private val sampleRate: Int, bufferMillis: Int = 8000) : 
         synchronized(lock) { total = framesWritten }
         val pad = sampleRate / 10
         enqueue(FloatArray(pad), pad, real = false)
-        synchronized(lock) { while (queuedSamples > 0 && feederError == null) lock.wait() }
+        synchronized(lock) {
+            while (queuedSamples > 0 && feederError == null) lock.wait()
+            feederError?.let { throw IllegalStateException("AudioTrack feeder failed", it) }
+        }
         val deadline = System.nanoTime() + ((total + pad) * 1_000_000_000L / sampleRate) + 1_000_000_000L
         var last = -1L
         var stableSince = System.nanoTime()
@@ -255,29 +321,34 @@ class AudioTrackPlayer(private val sampleRate: Int, bufferMillis: Int = 8000) : 
             }
             Thread.sleep(5)
         }
+        // The feeder is idle (the queue is empty and it has returned from its last write), so the track is ours.
         track.stop()
         started = false
-        synchronized(lock) { framesWritten = 0L }
-        timing = null
+        synchronized(lock) {
+            framesWritten = 0L
+            prewarmed = false
+            firstRealPending = true
+        }
     }
 
-    /** Drop whatever is queued and stop immediately. May be called from any thread. */
+    /**
+     * Drop whatever is queued and stop as soon as possible. May be called from any thread: it pauses the track
+     * (which also interrupts a blocked write) and lets the feeder thread flush and stop it.
+     */
     fun stopNow() {
         synchronized(lock) {
             generation++
-            // The feeder subtracts the item it is writing when it returns; drop the rest here.
             queuedSamples -= queue.sumOf { it.count.toLong() }
             queue.clear()
             framesWritten = 0L
+            prewarmed = false
+            firstRealPending = true
             lock.notifyAll()
         }
-        if (started) {
+        try {
             track.pause()
-            track.flush()
-            track.stop()
-            started = false
+        } catch (_: IllegalStateException) {
         }
-        timing = null
     }
 
     override fun close() {

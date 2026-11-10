@@ -36,7 +36,10 @@ Code releases are tagged `vX.Y.Z`; model weights are released separately as `wei
   to fill, so a short utterance never started and `drain()` returned after its 150 ms no-progress timeout (the 0.1.1
   `drain()` change was a symptom of this). The track is now about 160 ms, asks for the low-latency performance mode
   and runs on the mixer's fast path; the 8 s queue lives in the player and is fed by a thread, so `write()` still
-  returns without pacing the synthesis.
+  returns without pacing the synthesis. Consequences for callers: `write()` copies the chunk (the caller may reuse
+  its buffer at once); a failure of the track surfaces at the next `write()` or `drain()` as an `IllegalStateException`
+  with the original error as its cause, rather than from the `write()` that hit it; `write()` after `close()` throws;
+  `stopNow()` pauses the track at once and the feeder thread flushes it.
 
 ### Changed
 

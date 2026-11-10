@@ -122,6 +122,52 @@ class SmokeTest {
         }
     }
 
+    /**
+     * The player's threading on a real audio stack: a full utterance drains in about its own duration and
+     * reports the first chunk's timing; a second utterance through the same player works; stopNow() in the
+     * middle of playback returns at once and close() does not hang; prewarm() then write() marks the route open.
+     */
+    @Test
+    fun playerDrainsStopsAndIsReusable() {
+        assumeAssets()
+        LinnetModel(weights, tokenizer).use { model ->
+            model.loadVoice(voiceFile).use { voice ->
+                val audio = model.synthesize("The quick brown fox jumps over the lazy dog.", voice, SynthParams(seed = 1))
+                val chunks = audio.toList().chunked(model.samplesPerStep).map { it.toFloatArray() }
+                val audioMs = audio.size * 1000L / model.sampleRate
+                AudioTrackPlayer(model.sampleRate).use { player ->
+                    for (round in 0 until 2) {
+                        val t0 = System.nanoTime()
+                        for (c in chunks) player.write(c)
+                        val timing = player.timing
+                        assertTrue("timing is recorded on the first write", timing != null)
+                        player.drain()
+                        val ms = (System.nanoTime() - t0) / 1_000_000
+                        assertTrue("round $round drained in $ms ms for $audioMs ms of audio", ms in (audioMs - 200)..(audioMs + 1500))
+                        assertTrue("the playback head crossed the first chunk", timing!!.headPassedFirstChunkNanos != null)
+                        assertEquals(false, timing.routeWasOpen)
+                    }
+                    // Stop in the middle: write everything (the queue takes it at once), stop, must return quickly.
+                    for (c in chunks) player.write(c)
+                    val t1 = System.nanoTime()
+                    player.stopNow()
+                    assertTrue("stopNow returned at once", (System.nanoTime() - t1) / 1_000_000 < 500)
+                    // Reusable after a stop, and prewarm marks the route open.
+                    player.prewarm()
+                    for (c in chunks.take(5)) player.write(c)
+                    assertEquals(true, player.timing!!.routeWasOpen)
+                    player.drain()
+                }
+                // close() while playing must not hang.
+                val player = AudioTrackPlayer(model.sampleRate)
+                for (c in chunks) player.write(c)
+                val t2 = System.nanoTime()
+                player.close()
+                assertTrue("close returned at once", (System.nanoTime() - t2) / 1_000_000 < 2500)
+            }
+        }
+    }
+
     @Test
     fun sessionOutlivesModelAndErrorsAreTyped() {
         assumeAssets()
