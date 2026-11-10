@@ -59,7 +59,7 @@ flow LM 31.5 M including the 3.1 M text table, decoder 9.9 M; 38.4 M outside the
 
    `local/` is gitignored: nothing you put there is committed.
 
-2. **Rust runtime.** As a dependency: `linnet-tts = { git = "https://github.com/VoxRT/LinnetTTS", tag = "v0.1.1" }` (the crate
+2. **Rust runtime.** As a dependency: `linnet-tts = { git = "https://github.com/VoxRT/LinnetTTS", tag = "v0.2.0" }` (the crate
    is not on crates.io; see the crate docs with `cargo doc --no-deps` in `runtime/`). The `synth` example takes the weights, the tokenizer, a voice, the text and an output WAV, followed by
    the optional `temp` (0.3), `cfg` (2.0), `seed` (0) and `threads` (0 = automatic):
 

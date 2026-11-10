@@ -4,7 +4,7 @@ All notable changes to this project are documented in this file. The format foll
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/).
 Code releases are tagged `vX.Y.Z`; model weights are released separately as `weights-vN` (see `README.md`, "Weights").
 
-## [Unreleased]
+## [0.2.0] - 2026-11-10
 
 ### Added
 
@@ -109,6 +109,6 @@ codec with a Vocos-style decoder, ~41M parameters, 24 kHz, streaming).
 - Browser (WASM) and Node channels are deferred to a later release; the runtime keeps compiling for `wasm32-unknown-unknown`.
 - An int8 (W8A8) weight variant for weaker devices is planned as a separate weights file.
 
-[Unreleased]: https://github.com/VoxRT/LinnetTTS/compare/v0.1.1...HEAD
+[0.2.0]: https://github.com/VoxRT/LinnetTTS/releases/tag/v0.2.0
 [0.1.1]: https://github.com/VoxRT/LinnetTTS/releases/tag/v0.1.1
 [0.1.0]: https://github.com/VoxRT/LinnetTTS/releases/tag/v0.1.0
