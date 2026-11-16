@@ -198,7 +198,8 @@ File sizes are decimal megabytes (10^6 bytes), as in the weights table below.
 ## Weights
 
 Model weights are not in this repository and are not bundled in any package. Download them from the GitHub release
-`weights-v1` of https://github.com/VoxRT/LinnetTTS (mirror: https://huggingface.co/VoxRT/linnet-en-35m):
+`weights-v1` of https://github.com/VoxRT/LinnetTTS (mirror: https://huggingface.co/VoxRT/linnet-en-35m; if Linnet is useful
+to you, a like on that page helps others find it):
 
 | file | purpose |
 |---|---|
