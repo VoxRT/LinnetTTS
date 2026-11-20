@@ -10,9 +10,16 @@ recording) are produced by VoxRT's encoder, which is not published: order a voic
 
 **Try it:** [live demo that runs in your browser tab](https://voxrt.com/text-to-speech#live-demo) · [demo Space on Hugging Face](https://huggingface.co/spaces/VoxRT/linnet-tts) · [audio samples, and the same sentence from Piper, Kokoro and pocket-tts](https://huggingface.co/VoxRT/linnet-en-35m) · [make a voice of your own in VoxRT Studio](https://app.voxrt.com/signup?product=linnet)
 
-**Contents:** [Repository layout](#repository-layout) · [License](#license) · [Quick start](#quick-start) · [Examples](#examples) ·
-[Custom voices](#custom-voices) · [Performance](#performance) ([compared with other CPU TTS models](#compared-with-other-cpu-tts-models)) ·
-[Weights](#weights) · [Versioning](#versioning)
+**Contents**
+
+1. [Repository layout](#repository-layout)
+2. [License](#license)
+3. [Quick start](#quick-start)
+4. [Examples](#examples)
+5. [Custom voices](#custom-voices)
+6. [Performance](#performance), with [a comparison against other CPU TTS models](#compared-with-other-cpu-tts-models)
+7. [Weights](#weights)
+8. [Versioning](#versioning)
 
 ## Repository layout
 
