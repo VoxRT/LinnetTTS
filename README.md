@@ -10,12 +10,20 @@ recording) are produced by VoxRT's encoder, which is not published: order a voic
 
 **Try it:** [live demo that runs in your browser tab](https://voxrt.com/text-to-speech#live-demo) · [demo Space on Hugging Face](https://huggingface.co/spaces/VoxRT/linnet-tts) · [audio samples, and the same sentence from Piper, Kokoro and pocket-tts](https://huggingface.co/VoxRT/linnet-en-35m) · [make a voice of your own in VoxRT Studio](https://app.voxrt.com/signup?product=linnet)
 
+**Contents:** [Repository layout](#repository-layout) · [License](#license) · [Quick start](#quick-start) · [Examples](#examples) ·
+[Custom voices](#custom-voices) · [Performance](#performance) ([compared with other CPU TTS models](#compared-with-other-cpu-tts-models)) ·
+[Weights](#weights) · [Versioning](#versioning)
+
+## Repository layout
+
 - `python/` — `linnet_tts_torch`: reference model definition and inference in PyTorch (no training code; see `python/README.md`). The on-device Python package `linnet-tts` is built from the Rust runtime in `bindings/python/`.
 - `runtime/` — Rust runtime: `linnet-ops` (only the kernels this model uses) and `linnet-tts` (model, streaming session, C API).
 - `bindings/` — platform wrappers: Android AAR, iOS Swift package (xcframework), Linux C library and Python wheel. Browser (WASM) is deferred to a later release.
 - `build/` — build and packaging scripts.
 - `tests/goldens/` — shared golden vectors; Python and Rust must agree on them.
 - `docs/` — model card, weight container format, streaming contract.
+
+## License
 
 Code is licensed under Apache-2.0 (see `LICENSE`). The model weights, tokenizer and voice files are distributed separately
 under the Linnet Weights License (see `WEIGHTS_LICENSE.md`), which is not an open-source license. In short:
