@@ -4,10 +4,11 @@ Lightweight on-device text-to-speech with voice cloning, by VoxRT: the model spe
 latent, streams audio from the first 80 ms step, and runs in real time on a single phone CPU core. Under the hood: an autoregressive
 flow LM (1 NFE per frame) over a 25 Hz continuous-latent neural codec with a Vocos-style decoder, ~41M parameters end to end
 (31.5M LM + 9.9M decoder), fp16 weights. The release ships two built-in voices; voice prompts for new voices (cloning from a
-recording) are produced by VoxRT's encoder, which is not published, and are available under a separate license (see
-`WEIGHTS_LICENSE.md`).
+recording) are produced by VoxRT's encoder, which is not published: order a voice of your own in
+[VoxRT Studio](https://app.voxrt.com/signup?product=linnet) ("Custom voices" below), or write to us for a separate license
+(`WEIGHTS_LICENSE.md`).
 
-**Try it:** [live demo that runs in your browser tab](https://voxrt.com/text-to-speech#live-demo) · [demo Space on Hugging Face](https://huggingface.co/spaces/VoxRT/linnet-tts) · [audio samples, and the same sentence from Piper, Kokoro and pocket-tts](https://huggingface.co/VoxRT/linnet-en-35m)
+**Try it:** [live demo that runs in your browser tab](https://voxrt.com/text-to-speech#live-demo) · [demo Space on Hugging Face](https://huggingface.co/spaces/VoxRT/linnet-tts) · [audio samples, and the same sentence from Piper, Kokoro and pocket-tts](https://huggingface.co/VoxRT/linnet-en-35m) · [make a voice of your own in VoxRT Studio](https://app.voxrt.com/signup?product=linnet)
 
 - `python/` — `linnet_tts_torch`: reference model definition and inference in PyTorch (no training code; see `python/README.md`). The on-device Python package `linnet-tts` is built from the Rust runtime in `bindings/python/`.
 - `runtime/` — Rust runtime: `linnet-ops` (only the kernels this model uses) and `linnet-tts` (model, streaming session, C API).
@@ -24,7 +25,8 @@ under the Linnet Weights License (see `WEIGHTS_LICENSE.md`), which is not an ope
   assistants and notifications; shipping the unmodified weights with your product; selling audio you generate, subject to
   the restrictions on outputs (no use as a voice or cloning prompt for another system, no model training, and your client
   contracts must say so).
-- **Requires a separate written license from VoxRT** (help@voxrt.com): creating or cloning voices (including your own);
+- **Requires a separate written license from VoxRT** (help@voxrt.com): creating or cloning voices (including your own) other
+  than by ordering them in VoxRT Studio ("Custom voices" below);
   fine-tuning the weights or saving modified, quantised or converted copies of them (converting or quantising in memory at
   load time is allowed); training any model with the weights or their output; offering general-purpose text-to-speech to
   others in any form, free or paid, including an API, SDK, downloadable tool or hosted service; and distributing the weights
@@ -146,6 +148,27 @@ files are in `examples/audio/` together with the command that reproduces them.
 The model has no text normalisation. Simple digit forms such as the ones above are usually read correctly; dense raw text
 (currency amounts with decimals, percentages, slash or ISO dates, phone numbers, version strings) is sometimes misread or
 cut short, so convert such text to words before synthesis.
+
+## Custom voices
+
+The built-in voices are free. A voice of your own is made in [VoxRT Studio](https://app.voxrt.com/signup?product=linnet), VoxRT's web
+service, because the voice encoder (the part that turns a recording into the voice-prompt latent) is not published and runs on our
+side. The runtime stays on-device: the voice file you get back is loaded like the built-in ones.
+
+- **From a recording.** Upload 10 seconds to 2 minutes of one speaker in any English accent, recorded in a quiet room, in any
+  common audio format, and pick the 3–10 seconds that become the voice (5–8 seconds of clean speech works best). Without a
+  recording, choose an accent, age and tone and describe the voice in words.
+- **Hear it first.** The voice is usually ready within a couple of minutes and reads ten test phrases. Try another part of the
+  recording or regenerate; you pay only when you are happy with it.
+- **What you get.** A voice file (`your_voice.npy`, the same `[T, 48]` format as the built-in voices) that every binding loads in
+  place of a built-in voice (`load_voice` / `loadVoice`), plus the recording segment it was made from. The voice may ship in your
+  products, commercial ones included; it comes with the written authorisation that `WEIGHTS_LICENSE.md` requires for a custom voice.
+- **Price.** A one-time price per voice, shown in Studio before you order; no per-character, per-user or per-device fees. Brand
+  voices, other languages and wider licensing are scoped per project: [talk to us](https://voxrt.com/try).
+- **Consent.** Clone only your own voice or a voice you have the speaker's written consent to clone, confirmed when you upload.
+  Described voices must not imitate a real, identifiable person.
+
+More: [voxrt.com/text-to-speech](https://voxrt.com/text-to-speech) and the [Studio documentation](https://voxrt.com/docs/linnet-tts).
 
 ## Performance
 

@@ -6,7 +6,8 @@ Linnet is a lightweight on-device text-to-speech model: an autoregressive flow l
 latent per 80 ms step (two 24-dimensional codec frames at 25 Hz) with a single flow evaluation per step, followed by a Vocos-style neural
 codec decoder that turns latents into 24 kHz audio. The model speaks English in a voice given as a voice-prompt latent,
 streams audio from the first step, and runs in real time on a single phone- or desktop-class CPU core. It ships with two built-in voices; the encoder that produces
-latents from recordings is not part of this release, and creating new voices requires a separate license (see `WEIGHTS_LICENSE.md`).
+latents from recordings is not part of this release: a voice of your own is made in [VoxRT Studio](https://app.voxrt.com/signup?product=linnet)
+("Custom voices" below), and other arrangements need a separate license (see `WEIGHTS_LICENSE.md`).
 
 | | |
 |---|---|
@@ -139,6 +140,19 @@ A product may keep a prepared voice state of them (the voice prefix run through 
 which offers no export; a product may add one) on its own storage under the written permission in `WEIGHTS_PERMISSIONS.md`
 in the repository (https://github.com/VoxRT/LinnetTTS/blob/main/WEIGHTS_PERMISSIONS.md).
 
+## Custom voices
+
+A voice of your own is made in [VoxRT Studio](https://app.voxrt.com/signup?product=linnet), VoxRT's web service: the voice encoder that
+turns a recording into the voice-prompt latent is not published and runs on our side, while synthesis stays on-device. Upload
+10 seconds to 2 minutes of one speaker in any English accent (a quiet room, any common format) and pick the 3–10 seconds that become
+the voice (5–8 seconds of clean speech works best), or describe a voice by accent, age and tone. The voice is usually ready within a
+couple of minutes and reads ten test phrases before you pay (a one-time price per voice, shown in Studio; no per-character, per-user or per-device fees).
+You receive a voice file in the same `[T, 48]` format as the built-in voices, loaded with `load_voice` / `loadVoice` in every binding,
+plus the recording segment it was made from; the voice may ship in your products, commercial ones included, with the written
+authorisation the weights license requires. Clone only your own voice or one you have the speaker's written consent to clone; described
+voices must not imitate a real, identifiable person. Brand voices, other languages and wider licensing: [talk to us](https://voxrt.com/try).
+More at [voxrt.com/text-to-speech](https://voxrt.com/text-to-speech).
+
 ## Intended use and limitations
 
 - English only; other languages produce garbage.
@@ -152,7 +166,8 @@ in the repository (https://github.com/VoxRT/LinnetTTS/blob/main/WEIGHTS_PERMISSI
 - Under the standard license the model may be used with the built-in voices and with voices VoxRT has expressly authorised in writing.
   Cloning any voice (including your own, with consent), designing new voices, fine-tuning the weights or saving modified, quantised or
   converted copies of them, training models with the weights or their output, and offering general-purpose text-to-speech to others in any
-  form, free or paid, including an API, SDK, downloadable tool or hosted service, require a separate written license (help@voxrt.com). It may not be used to impersonate a real person
+  form, free or paid, including an API, SDK, downloadable tool or hosted service, require a separate written license (help@voxrt.com); a custom voice
+  ordered in VoxRT Studio comes with that authorisation. It may not be used to impersonate a real person
   deceptively or to present its output as a genuine recording. See `WEIGHTS_LICENSE.md`.
 - Not designed or certified as the sole means of conveying safety-critical or emergency information; see `WEIGHTS_LICENSE.md`, Section 10.
 
